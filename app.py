@@ -1,9 +1,6 @@
 """
-SMART PRIME v0.2 — Module 2: THE BRAIN (Render edition)
-Constitutional agent of Juan Ricci (@smartcash22)
-Mission: FIRST STAGE — autonomous income, starting with the Musk/space channel.
-New in v0.2: real AI brain (OpenRouter, free models with fallback),
-constitution in every reply, automatic daily 7:00 AM HST report.
+SMART PRIME v0.3 — INSTRUMENTED (Render edition)
+Every message prints >>> EAR [...] in logs. Every error prints >>> ERROR.
 """
 
 import os
@@ -29,7 +26,6 @@ RESUME_PHRASE = "smart resume"
 SPEND_CAP = 200.0
 RESERVE = 100.0
 
-# Free models, in fallback order. "openrouter/free" auto-picks an available one.
 BRAIN_MODELS = [
     "openrouter/free",
     "nvidia/nemotron-3-super-120b-a12b:free",
@@ -39,10 +35,15 @@ BRAIN_MODELS = [
 brain = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=BRAIN_API_KEY,
+    timeout=30.0,
+    max_retries=0,
 ) if BRAIN_API_KEY else None
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s",
                     level=logging.INFO)
+
+def ear(tag, detail=""):
+    print(f">>> EAR [{tag}] {detail}", flush=True)
 
 def db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -79,9 +80,7 @@ def owner_id():
 def is_owner(update: Update) -> bool:
     return str(update.effective_chat.id) == str(owner_id())
 
-# ============ THE BRAIN ============
 async def brain_ask(user_text):
-    """Ask the AI brain. Tries each free model until one answers. Returns (text, model) or (None, error)."""
     if not brain:
         return None, "no BRAIN_API_KEY set"
     mem = _db.execute(
@@ -102,6 +101,7 @@ Personality: direct, honest, concise, proactive. Keep replies under 150 words un
 
     for model in BRAIN_MODELS:
         try:
+            ear("brain", f"asking {model}...")
             r = await brain.chat.completions.create(
                 model=model,
                 messages=[{"role": "system", "content": system},
@@ -109,17 +109,24 @@ Personality: direct, honest, concise, proactive. Keep replies under 150 words un
                 max_tokens=2000,
             )
             if not getattr(r, "choices", None):
+                ear("brain", f"{model}: empty response, trying next")
                 continue
             txt = (r.choices[0].message.content or "").strip()
             if txt:
+                ear("brain", f"{model}: answered ({len(txt)} chars)")
                 return txt, model
         except Exception as e:
+            ear("brain", f"{model} failed: {str(e)[:90]}")
             log_action("BRAIN", f"{model} failed: {str(e)[:90]}")
             continue
     return None, "all brain models unavailable"
 
-# ============ HANDLERS ============
+async def on_error(update, context):
+    print(f">>> ERROR in handler: {context.error}", flush=True)
+    log_action("ERROR", f"handler exception: {str(context.error)[:120]}")
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ear("cmd", "/start")
     cid = update.effective_chat.id
     if owner_id() is None:
         set_setting("owner_chat_id", cid)
@@ -138,6 +145,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"This is a private agent. Your chat ID: {cid}. Access denied.")
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ear("cmd", "/status")
     if not is_owner(update):
         return
     frozen = get_setting("frozen") == "1"
@@ -146,13 +154,14 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='SPEND'").fetchone()[0]
     brain_state = "connected" if brain else "NO KEY"
     await update.message.reply_text(
-        f"🧠 SMART PRIME v0.2\nFrozen: {'YES 🧊' if frozen else 'no'}\n"
+        f"🧠 SMART PRIME v0.3\nFrozen: {'YES 🧊' if frozen else 'no'}\n"
         f"Brain: {brain_state}\nMemory entries: {memories}\n"
         f"Mission: FIRST STAGE\n"
         f"Spending: ${spent:.2f} of ${SPEND_CAP:.0f} cap — Reserve ${RESERVE:.0f} untouched\n"
         f"Daily report: 7:00 AM HST")
 
 async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ear("cmd", "/remember")
     if not is_owner(update):
         return
     text = update.message.text.partition(" ")[2]
@@ -169,6 +178,7 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🧠 Remembered under '{topic}'.")
 
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ear("cmd", "/report")
     if not is_owner(update):
         return
     rows = _db.execute(
@@ -177,7 +187,6 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 async def daily_report(context: ContextTypes.DEFAULT_TYPE):
-    """Automatic 7:00 AM HST (17:00 UTC) report to the owner."""
     oid = owner_id()
     if not oid:
         return
@@ -200,6 +209,7 @@ async def daily_report(context: ContextTypes.DEFAULT_TYPE):
 
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
+    ear("message", text[:80])
     low = text.lower()
 
     if low in FREEZE_PHRASES:
@@ -249,7 +259,7 @@ def dashboard():
         "SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
     ledger_md = "\n".join([f"- {r[0][:16]} | **{r[1]}** | {r[2]}" for r in rows]) or "_empty_"
     return f"""
-# 🧠 SMART PRIME — v0.2 THE BRAIN
+# 🧠 SMART PRIME — v0.3 INSTRUMENTED
 **Status:** {'🧊 FROZEN' if frozen else '▶️ ACTIVE'}
 **Brain:** {'connected' if brain else 'NO KEY'}
 **Mission:** FIRST STAGE (Musk/space channel)
@@ -273,7 +283,6 @@ if TOKEN.startswith("PASTE_"):
 if not BRAIN_API_KEY:
     print("WARNING: set the BRAIN_API_KEY environment variable on Render.")
 
-# Dashboard runs on the side; the Telegram brain owns the main thread
 threading.Thread(target=run_dashboard, daemon=True).start()
 
 app = Application.builder().token(TOKEN).build()
@@ -282,8 +291,9 @@ app.add_handler(CommandHandler("status", cmd_status))
 app.add_handler(CommandHandler("remember", cmd_remember))
 app.add_handler(CommandHandler("report", cmd_report))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+app.add_error_handler(on_error)
 app.job_queue.run_daily(daily_report,
                         time=dtime(hour=17, minute=0, tzinfo=timezone.utc))
-log_action("BOOT", "Smart Prime v0.2 started (Brain edition)")
-print("Smart Prime v0.2 — listening on Telegram.")
-app.run_polling()
+log_action("BOOT", "Smart Prime v0.3 started (instrumented)")
+print("Smart Prime v0.3 — listening on Telegram.")
+app.run_polling(drop_pending_updates=True)

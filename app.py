@@ -1,12 +1,15 @@
 """
-SMART PRIME v0.3 — INSTRUMENTED (Render edition)
-Every message prints >>> EAR [...] in logs. Every error prints >>> ERROR.
+SMART PRIME v0.3 — THE BRAIN, HARDENED (Render edition)
+Constitutional agent of Juan Ricci (@smartcash22)
+v0.3: 20s brain timeout (can never hang), visible error reporting,
+command queue flush on boot, every message logged to console.
 """
 
 import os
 import sqlite3
 import logging
 import threading
+import traceback
 from datetime import datetime, time as dtime, timezone
 
 import gradio as gr
@@ -32,18 +35,16 @@ BRAIN_MODELS = [
     "cohere/north-mini-code:free",
 ]
 
+# 20-second hard cutoff: the brain can NEVER hang him
 brain = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=BRAIN_API_KEY,
-    timeout=30.0,
+    timeout=20.0,
     max_retries=0,
 ) if BRAIN_API_KEY else None
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s",
                     level=logging.INFO)
-
-def ear(tag, detail=""):
-    print(f">>> EAR [{tag}] {detail}", flush=True)
 
 def db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -80,6 +81,7 @@ def owner_id():
 def is_owner(update: Update) -> bool:
     return str(update.effective_chat.id) == str(owner_id())
 
+# ============ THE BRAIN (with timeout) ============
 async def brain_ask(user_text):
     if not brain:
         return None, "no BRAIN_API_KEY set"
@@ -93,15 +95,15 @@ Your laws (never break these):
 2. 'Smart Freeze' or 'Smart Para' from Juan halts everything instantly; only he can resume.
 3. Spending cap $200, reserve $100 never touched, no money moves without Juan's approval.
 4. Full autonomy on operations. Juan's only job is money decisions.
-5. Never fabricate facts. Use evidence tiers: announced, observed, corroborated, assumption.
+5. Never fabricate facts. Evidence tiers: announced, observed, corroborated, assumption.
 Income ladder: first income from day one; $500/mo by month 6; $1000/mo by month 9; $6000+/mo with clones by month 12-24.
 Your stored memory (what Juan taught you):
 {memory_txt}
 Personality: direct, honest, concise, proactive. Keep replies under 150 words unless Juan asks for more. Speak to Juan as 'Juan' or 'boss'."""
 
     for model in BRAIN_MODELS:
+        print(f">>> BRAIN trying {model}...")
         try:
-            ear("brain", f"asking {model}...")
             r = await brain.chat.completions.create(
                 model=model,
                 messages=[{"role": "system", "content": system},
@@ -109,24 +111,22 @@ Personality: direct, honest, concise, proactive. Keep replies under 150 words un
                 max_tokens=2000,
             )
             if not getattr(r, "choices", None):
-                ear("brain", f"{model}: empty response, trying next")
+                print(f">>> BRAIN {model}: empty response, next")
                 continue
             txt = (r.choices[0].message.content or "").strip()
             if txt:
-                ear("brain", f"{model}: answered ({len(txt)} chars)")
+                print(f">>> BRAIN answer via {model}")
                 return txt, model
+            print(f">>> BRAIN {model}: blank content, next")
         except Exception as e:
-            ear("brain", f"{model} failed: {str(e)[:90]}")
+            print(f">>> BRAIN {model} FAILED: {str(e)[:120]}")
             log_action("BRAIN", f"{model} failed: {str(e)[:90]}")
             continue
     return None, "all brain models unavailable"
 
-async def on_error(update, context):
-    print(f">>> ERROR in handler: {context.error}", flush=True)
-    log_action("ERROR", f"handler exception: {str(context.error)[:120]}")
-
+# ============ HANDLERS ============
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ear("cmd", "/start")
+    print(">>> MOUTH: /start")
     cid = update.effective_chat.id
     if owner_id() is None:
         set_setting("owner_chat_id", cid)
@@ -145,7 +145,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"This is a private agent. Your chat ID: {cid}. Access denied.")
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ear("cmd", "/status")
+    print(">>> MOUTH: /status")
     if not is_owner(update):
         return
     frozen = get_setting("frozen") == "1"
@@ -161,7 +161,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Daily report: 7:00 AM HST")
 
 async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ear("cmd", "/remember")
+    print(">>> MOUTH: /remember")
     if not is_owner(update):
         return
     text = update.message.text.partition(" ")[2]
@@ -178,7 +178,7 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🧠 Remembered under '{topic}'.")
 
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ear("cmd", "/report")
+    print(">>> MOUTH: /report")
     if not is_owner(update):
         return
     rows = _db.execute(
@@ -204,13 +204,14 @@ async def daily_report(context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(chat_id=int(oid), text=text)
         log_action("REPORT", "daily report sent")
+        print(">>> MOUTH: daily report sent")
     except Exception as e:
         log_action("ERROR", f"daily report failed: {str(e)[:80]}")
 
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
-    ear("message", text[:80])
     low = text.lower()
+    print(f">>> SMART-EAR: {text[:90]}")
 
     if low in FREEZE_PHRASES:
         if is_owner(update):
@@ -232,6 +233,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not is_owner(update):
+        print(">>> SMART-EAR: ignored (not owner)")
         return
 
     if get_setting("frozen") == "1":
@@ -245,10 +247,17 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if answer:
         log_action("BRAIN", f"answered via {model}")
         await update.message.reply_text(answer[:4000])
+        print(">>> MOUTH: brain answer sent")
     else:
         await update.message.reply_text(
             f"🧠 Brain offline ({model}). Juan — check BRAIN_API_KEY on Render. "
-            "I logged the error in my ledger.")
+            "I logged it. /status still works.")
+        print(">>> MOUTH: brain offline notice sent")
+
+async def on_error(update, context):
+    print("!!! HANDLER ERROR:", context.error)
+    traceback.print_exc()
+    log_action("ERROR", f"handler: {str(context.error)[:100]}")
 
 def dashboard():
     frozen = get_setting("frozen") == "1"
@@ -259,9 +268,9 @@ def dashboard():
         "SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
     ledger_md = "\n".join([f"- {r[0][:16]} | **{r[1]}** | {r[2]}" for r in rows]) or "_empty_"
     return f"""
-# 🧠 SMART PRIME — v0.3 INSTRUMENTED
+# 🧠 SMART PRIME — v0.3
 **Status:** {'🧊 FROZEN' if frozen else '▶️ ACTIVE'}
-**Brain:** {'connected' if brain else 'NO KEY'}
+**Brain:** {'connected (20s timeout)' if brain else 'NO KEY'}
 **Mission:** FIRST STAGE (Musk/space channel)
 **Spending:** ${spent:.2f} / ${SPEND_CAP:.0f} cap — Reserve ${RESERVE:.0f} untouched
 **Memory entries:** {memories}
@@ -294,6 +303,7 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 app.add_error_handler(on_error)
 app.job_queue.run_daily(daily_report,
                         time=dtime(hour=17, minute=0, tzinfo=timezone.utc))
-log_action("BOOT", "Smart Prime v0.3 started (instrumented)")
+log_action("BOOT", "Smart Prime v0.3 started")
 print("Smart Prime v0.3 — listening on Telegram.")
+# drop_pending_updates=True: flush any stuck message queue from old instances
 app.run_polling(drop_pending_updates=True)

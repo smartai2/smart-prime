@@ -1,5 +1,5 @@
 """
-SMART PRIME v0.1 — Module 1: The Core
+SMART PRIME v0.1 — Module 1: The Core (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22)
 Mission: FIRST STAGE — autonomous income, starting with the Musk/space channel.
 """
@@ -190,15 +190,15 @@ async def bot_main():
     log_action("BOOT", "Smart Prime v0.1 started (Render edition)")
     await app.run_polling()
 
-def start_bot_thread():
-    asyncio.run(bot_main())
+def run_dashboard():
+    demo = gr.Interface(fn=dashboard, inputs=None, outputs="markdown",
+                        title="Smart Prime")
+    demo.launch(server_name="0.0.0.0",
+                server_port=int(os.environ.get("PORT", 7860)))
 
 if TOKEN.startswith("PASTE_"):
     print("WARNING: set the SMART_TOKEN environment variable on Render.")
 
-threading.Thread(target=start_bot_thread, daemon=True).start()
-
-demo = gr.Interface(fn=dashboard, inputs=None, outputs="markdown",
-                    title="Smart Prime")
-demo.launch(server_name="0.0.0.0",
-            server_port=int(os.environ.get("PORT", 7860)))
+# Dashboard runs on the side; the Telegram brain is the MAIN engine
+threading.Thread(target=run_dashboard, daemon=True).start()
+asyncio.run(bot_main())

@@ -1,28 +1,45 @@
 """
-SMART PRIME v0.1 — Module 1: The Core (Render edition)
+SMART PRIME v0.2 — Module 2: THE BRAIN (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22)
 Mission: FIRST STAGE — autonomous income, starting with the Musk/space channel.
+New in v0.2: real AI brain (OpenRouter, free models with fallback),
+constitution in every reply, automatic daily 7:00 AM HST report.
 """
 
 import os
 import sqlite3
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, time as dtime, timezone
 
 import gradio as gr
+from openai import AsyncOpenAI
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     ContextTypes, filters
 )
 
 TOKEN = os.environ.get("SMART_TOKEN", "PASTE_YOUR_TOKEN_HERE")
+BRAIN_API_KEY = os.environ.get("BRAIN_API_KEY", "")
 DB_PATH = "smart.db"
 FREEZE_PHRASES = {"smart freeze", "smart para"}
 RESUME_PHRASE = "smart resume"
 SPEND_CAP = 200.0
 RESERVE = 100.0
+
+# Free models, in fallback order. "openrouter/free" auto-picks an available one.
+BRAIN_MODELS = [
+    "openrouter/free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "cohere/north-mini-code:free",
+]
+
+brain = AsyncOpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=BRAIN_API_KEY,
+) if BRAIN_API_KEY else None
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s",
                     level=logging.INFO)
@@ -62,24 +79,60 @@ def owner_id():
 def is_owner(update: Update) -> bool:
     return str(update.effective_chat.id) == str(owner_id())
 
+# ============ THE BRAIN ============
+async def brain_ask(user_text):
+    """Ask the AI brain. Tries each free model until one answers. Returns (text, model) or (None, error)."""
+    if not brain:
+        return None, "no BRAIN_API_KEY set"
+    mem = _db.execute(
+        "SELECT kind, content, verification FROM memory ORDER BY id DESC LIMIT 12").fetchall()
+    memory_txt = "\n".join(f"- [{m[2]}] {m[0]}: {m[1]}" for m in mem) or "(none yet)"
+    system = f"""You are Smart Prime, first agent of the swarm — a constitutional AI agent owned by Juan Ricci.
+Your mission: build self-sustaining passive income fully autonomously. Current project: FIRST STAGE, a faceless YouTube channel about Musk and space.
+Your laws (never break these):
+1. Juan is sovereign. Only his verified Telegram commands control you.
+2. 'Smart Freeze' or 'Smart Para' from Juan halts everything instantly; only he can resume.
+3. Spending cap $200, reserve $100 never touched, no money moves without Juan's approval.
+4. Full autonomy on operations. Juan's only job is money decisions.
+5. Never fabricate facts. Use evidence tiers: announced, observed, corroborated, assumption.
+Income ladder: first income from day one; $500/mo by month 6; $1000/mo by month 9; $6000+/mo with clones by month 12-24.
+Your stored memory (what Juan taught you):
+{memory_txt}
+Personality: direct, honest, concise, proactive. Keep replies under 150 words unless Juan asks for more. Speak to Juan as 'Juan' or 'boss'."""
+
+    for model in BRAIN_MODELS:
+        try:
+            r = await brain.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": system},
+                          {"role": "user", "content": user_text}],
+                max_tokens=2000,
+            )
+            if not getattr(r, "choices", None):
+                continue
+            txt = (r.choices[0].message.content or "").strip()
+            if txt:
+                return txt, model
+        except Exception as e:
+            log_action("BRAIN", f"{model} failed: {str(e)[:90]}")
+            continue
+    return None, "all brain models unavailable"
+
+# ============ HANDLERS ============
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
     if owner_id() is None:
         set_setting("owner_chat_id", cid)
         log_action("SECURITY", f"Owner registered: chat_id {cid}")
         await update.message.reply_text(
-            "✅ Smart Prime online.\n"
+            "✅ Smart Prime online. Brain: connected.\n"
             f"Owner registered: chat ID {cid}\n\n"
-            "If this is you, Juan — this ID is now permanently bound. "
-            "No one else can ever command me.\n\n"
-            "Commands:\n/status — what I know\n"
-            "/report — recent activity\n"
-            "/remember <topic> | <fact> — store knowledge\n"
+            "Commands: /status /report /remember <topic> | <fact>\n"
+            "Or just talk to me — I'm listening.\n"
             "Say 'Smart Freeze' anytime to stop everything.")
         return
     if is_owner(update):
-        await update.message.reply_text(
-            "Smart Prime at your service, Juan. /status for overview.")
+        await update.message.reply_text("Smart Prime at your service, Juan. Talk to me or /status.")
     else:
         await update.message.reply_text(
             f"This is a private agent. Your chat ID: {cid}. Access denied.")
@@ -91,13 +144,13 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     memories = _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
     spent = _db.execute(
         "SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='SPEND'").fetchone()[0]
+    brain_state = "connected" if brain else "NO KEY"
     await update.message.reply_text(
-        f"🧠 STATUS\nFrozen: {'YES 🧊' if frozen else 'no'}\n"
-        f"Memory entries: {memories}\n"
-        f"Phase: v0.1 CORE (brain in Module 2)\n"
+        f"🧠 SMART PRIME v0.2\nFrozen: {'YES 🧊' if frozen else 'no'}\n"
+        f"Brain: {brain_state}\nMemory entries: {memories}\n"
         f"Mission: FIRST STAGE\n"
-        f"Spending: ${spent:.2f} of ${SPEND_CAP:.0f} cap\n"
-        f"Reserve: ${RESERVE:.0f} (untouched)")
+        f"Spending: ${spent:.2f} of ${SPEND_CAP:.0f} cap — Reserve ${RESERVE:.0f} untouched\n"
+        f"Daily report: 7:00 AM HST")
 
 async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update):
@@ -123,10 +176,33 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = ["📋 RECENT LEDGER"] + [f"• {r[0][:16]} | {r[1]} | {r[2]}" for r in rows]
     await update.message.reply_text("\n".join(lines))
 
-async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (update.message.text or "").strip().lower()
+async def daily_report(context: ContextTypes.DEFAULT_TYPE):
+    """Automatic 7:00 AM HST (17:00 UTC) report to the owner."""
+    oid = owner_id()
+    if not oid:
+        return
+    frozen = get_setting("frozen") == "1"
+    memories = _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
+    rows = _db.execute(
+        "SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 5").fetchall()
+    recent = "\n".join(f"• {r[0][:16]} | {r[1]} | {r[2]}" for r in rows) or "• (quiet night)"
+    text = (f"🌅 GOOD MORNING JUAN — daily report\n"
+            f"Status: {'🧊 FROZEN' if frozen else '▶️ active'}\n"
+            f"Memory entries: {memories}\n"
+            f"Spending: $0.00 of ${SPEND_CAP:.0f} cap — reserve intact\n\n"
+            f"Recent activity:\n{recent}\n\n"
+            f"Standing by. 'Smart Freeze' stops everything.")
+    try:
+        await context.bot.send_message(chat_id=int(oid), text=text)
+        log_action("REPORT", "daily report sent")
+    except Exception as e:
+        log_action("ERROR", f"daily report failed: {str(e)[:80]}")
 
-    if text in FREEZE_PHRASES:
+async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (update.message.text or "").strip()
+    low = text.lower()
+
+    if low in FREEZE_PHRASES:
         if is_owner(update):
             set_setting("frozen", "1")
             log_action("CONTROL", "SMART FREEZE executed by owner")
@@ -138,7 +214,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                        f"Freeze attempt from unauthorized chat {update.effective_chat.id}")
         return
 
-    if text == RESUME_PHRASE:
+    if low == RESUME_PHRASE:
         if is_owner(update):
             set_setting("frozen", "0")
             log_action("CONTROL", "RESUMED by owner")
@@ -152,11 +228,17 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🧊 I am frozen. 'Smart Resume' to wake me.")
         return
 
-    log_action("MESSAGE", f"received: {update.message.text[:60]}")
-    await update.message.reply_text(
-        "🧠 Message received and logged. Full brain arrives in Module 2 — "
-        "for now I hear you, remember everything, and obey the freeze. "
-        "Try /remember goals | make Juan $500/mo by month 6")
+    log_action("MESSAGE", f"received: {text[:60]}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id,
+                                       action=ChatAction.TYPING)
+    answer, model = await brain_ask(text)
+    if answer:
+        log_action("BRAIN", f"answered via {model}")
+        await update.message.reply_text(answer[:4000])
+    else:
+        await update.message.reply_text(
+            f"🧠 Brain offline ({model}). Juan — check BRAIN_API_KEY on Render. "
+            "I logged the error in my ledger.")
 
 def dashboard():
     frozen = get_setting("frozen") == "1"
@@ -167,8 +249,9 @@ def dashboard():
         "SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
     ledger_md = "\n".join([f"- {r[0][:16]} | **{r[1]}** | {r[2]}" for r in rows]) or "_empty_"
     return f"""
-# 🧠 SMART PRIME — v0.1 CORE
+# 🧠 SMART PRIME — v0.2 THE BRAIN
 **Status:** {'🧊 FROZEN' if frozen else '▶️ ACTIVE'}
+**Brain:** {'connected' if brain else 'NO KEY'}
 **Mission:** FIRST STAGE (Musk/space channel)
 **Spending:** ${spent:.2f} / ${SPEND_CAP:.0f} cap — Reserve ${RESERVE:.0f} untouched
 **Memory entries:** {memories}
@@ -176,7 +259,7 @@ def dashboard():
 ## Recent ledger
 {ledger_md}
 
-_Owner: Juan Ricci (@smartcash22) — Freeze: 'Smart Freeze' / 'Smart Para'_
+_Owner: Juan Ricci (@smartcash22) — Freeze: 'Smart Freeze' / 'Smart Para' — Report daily 7AM HST_
 """
 
 def run_dashboard():
@@ -187,6 +270,8 @@ def run_dashboard():
 
 if TOKEN.startswith("PASTE_"):
     print("WARNING: set the SMART_TOKEN environment variable on Render.")
+if not BRAIN_API_KEY:
+    print("WARNING: set the BRAIN_API_KEY environment variable on Render.")
 
 # Dashboard runs on the side; the Telegram brain owns the main thread
 threading.Thread(target=run_dashboard, daemon=True).start()
@@ -197,6 +282,8 @@ app.add_handler(CommandHandler("status", cmd_status))
 app.add_handler(CommandHandler("remember", cmd_remember))
 app.add_handler(CommandHandler("report", cmd_report))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
-log_action("BOOT", "Smart Prime v0.1 started (Render edition)")
-print("Smart Prime v0.1 — listening on Telegram.")
+app.job_queue.run_daily(daily_report,
+                        time=dtime(hour=17, minute=0, tzinfo=timezone.utc))
+log_action("BOOT", "Smart Prime v0.2 started (Brain edition)")
+print("Smart Prime v0.2 — listening on Telegram.")
 app.run_polling()

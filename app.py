@@ -7,7 +7,6 @@ Mission: FIRST STAGE — autonomous income, starting with the Musk/space channel
 import os
 import sqlite3
 import logging
-import asyncio
 import threading
 from datetime import datetime
 
@@ -180,16 +179,6 @@ def dashboard():
 _Owner: Juan Ricci (@smartcash22) — Freeze: 'Smart Freeze' / 'Smart Para'_
 """
 
-async def bot_main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("remember", cmd_remember))
-    app.add_handler(CommandHandler("report", cmd_report))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
-    log_action("BOOT", "Smart Prime v0.1 started (Render edition)")
-    await app.run_polling()
-
 def run_dashboard():
     demo = gr.Interface(fn=dashboard, inputs=None, outputs="markdown",
                         title="Smart Prime")
@@ -199,6 +188,15 @@ def run_dashboard():
 if TOKEN.startswith("PASTE_"):
     print("WARNING: set the SMART_TOKEN environment variable on Render.")
 
-# Dashboard runs on the side; the Telegram brain is the MAIN engine
+# Dashboard runs on the side; the Telegram brain owns the main thread
 threading.Thread(target=run_dashboard, daemon=True).start()
-asyncio.run(bot_main())
+
+app = Application.builder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", cmd_start))
+app.add_handler(CommandHandler("status", cmd_status))
+app.add_handler(CommandHandler("remember", cmd_remember))
+app.add_handler(CommandHandler("report", cmd_report))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+log_action("BOOT", "Smart Prime v0.1 started (Render edition)")
+print("Smart Prime v0.1 — listening on Telegram.")
+app.run_polling()

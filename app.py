@@ -1,17 +1,18 @@
 """
-SMART PRIME v0.5 — WEBHOOK EDITION (Render)
+SMART PRIME v0.4 — MODULE 3: THE CONSTITUTION (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22)
-Architecture change: webhook instead of polling (no 409 wars, no ghost instances,
-Telegram wakes him directly). Boot-code ownership (no lockouts, no hijacks).
+v0.4: YPP deadline hard-coded + /goal pace tracker + auto-seeded constitution
+(laws reload themselves after every rebuild — memory wipes are dead).
 """
 
 import os
-import random
 import sqlite3
 import logging
+import threading
 import traceback
 from datetime import datetime, date, time as dtime, timezone
 
+import gradio as gr
 from openai import AsyncOpenAI
 from telegram import Update
 from telegram.constants import ChatAction
@@ -28,16 +29,12 @@ RESUME_PHRASE = "smart resume"
 SPEND_CAP = 200.0
 RESERVE = 100.0
 
-DEADLINE = date(2027, 2, 1)
-TARGET = date(2027, 1, 18)
-LAUNCH = date(2026, 11, 1)
+# ===== YPP DEADLINE ENGINE — THE LINE =====
+DEADLINE = date(2027, 2, 1)          # YPP threshold change — DO NOT MISS
+TARGET = date(2027, 1, 18)           # hit metrics 2 weeks early (review buffer)
+LAUNCH = date(2026, 11, 1)           # FIRST STAGE go-live
 YPP_SUBS = 1000
 YPP_HOURS = 4000
-
-PORT = int(os.environ.get("PORT", "10000"))
-WEBHOOK_URL = f"https://smart-prime.onrender.com/{TOKEN}"
-
-BOOT_CODE = str(random.randint(1000, 9999))
 
 BRAIN_MODELS = [
     "openrouter/free",
@@ -45,6 +42,7 @@ BRAIN_MODELS = [
     "cohere/north-mini-code:free",
 ]
 
+# 20-second hard cutoff: the brain can NEVER hang him
 brain = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=BRAIN_API_KEY,
@@ -90,6 +88,7 @@ def owner_id():
 def is_owner(update: Update) -> bool:
     return str(update.effective_chat.id) == str(owner_id())
 
+# ===== AUTO-SEEDED CONSTITUTION (survives every rebuild) =====
 CONSTITUTION = [
     ("mission", "Build self-sustaining passive income fully autonomously. "
      "First project: FIRST STAGE, a faceless YouTube channel covering Musk and space.", "core"),
@@ -120,6 +119,7 @@ def seed_constitution():
 
 seed_constitution()
 
+# ===== GOAL ENGINE =====
 def goal_status():
     today = date.today()
     subs = int(get_setting("subs_now") or 0)
@@ -131,8 +131,8 @@ def goal_status():
                 f"🎯 GOAL STATUS — PRE-LAUNCH\n"
                 f"YPP deadline: Feb 1, 2027 — {days_left} days away\n"
                 f"From launch (Nov 1) to target (Jan 18): {weeks:.0f} weeks\n"
-                f"Required pace: ~{round(YPP_SUBS / weeks)} subs/wk + ~{round(YPP_HOURS / weeks)} hrs/wk\n"
-                f"Status: ⏳ ready — every pre-launch day is pace in the bank")
+                f"Required weekly pace: ~{round(YPP_SUBS / weeks)} subs/wk + ~{round(YPP_HOURS / weeks)} hrs/wk\n"
+                f"Status: ⏳ ready to execute — every pre-launch day is pace in the bank")
     weeks_left = max((TARGET - today).days / 7, 0.5)
     weeks_in = max((today - LAUNCH).days / 7, 0.5)
     need_s = YPP_SUBS / weeks_left
@@ -140,20 +140,19 @@ def goal_status():
     got_s = subs / weeks_in
     got_h = hours / weeks_in
     ratio = min(got_s / max(need_s, 1), got_h / max(need_h, 1))
-    color = "🟢 ON PACE" if ratio >= 1.0 else ("🟡 WATCH" if ratio >= 0.7 else "🔴 BEHIND")
+    color = "🟢 ON PACE" if ratio >= 1.0 else ("🟡 WATCH" if ratio >= 0.7 else "🔴 BEHIND — RECOVERY PLAN NEEDED")
     return ("live", days_left, subs, hours,
             f"🎯 GOAL STATUS\n"
             f"YPP deadline: Feb 1, 2027 — {days_left} days\n"
             f"Now: {subs} subs / {hours:.0f} hours\n"
-            f"Required: ~{need_s:.0f} subs/wk + ~{need_h:.0f} hrs/wk\n"
-            f"Actual: ~{got_s:.0f} subs/wk + ~{got_h:.0f} hrs/wk\n"
+            f"Required pace: ~{need_s:.0f} subs/wk + ~{need_h:.0f} hrs/wk\n"
+            f"Actual pace: ~{got_s:.0f} subs/wk + ~{got_h:.0f} hrs/wk\n"
             f"Status: {color}\n"
-            f"Update: /goal subs 850 hours 3100")
+            f"Update me: /goal subs 850 hours 3100")
 
 async def cmd_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> MOUTH: /goal")
     if not is_owner(update):
-        await update.message.reply_text("Access denied.")
         return
     text = update.message.text.partition(" ")[2].lower()
     if "subs" in text or "hours" in text:
@@ -170,6 +169,7 @@ async def cmd_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     *_, msg = goal_status()
     await update.message.reply_text(msg)
 
+# ===== THE BRAIN (with timeout) =====
 async def brain_ask(user_text):
     if not brain:
         return None, "no BRAIN_API_KEY set"
@@ -177,9 +177,9 @@ async def brain_ask(user_text):
         "SELECT kind, content, verification FROM memory ORDER BY id DESC LIMIT 12").fetchall()
     memory_txt = "\n".join(f"- [{m[2]}] {m[0]}: {m[1]}" for m in mem) or "(none yet)"
     mode, days_left, subs, hours, _ = goal_status()
-    deadline_txt = (f"YPP deadline Feb 1 2027: {days_left} days away. Metrics: "
+    deadline_txt = (f"YPP deadline Feb 1 2027: {days_left} days away. Current metrics: "
                     f"{subs} subs / {hours:.0f} hours. Mode: {mode}. "
-                    "Judge all advice against this deadline.")
+                    "Judge all advice and plans against this deadline.")
     system = f"""You are Smart Prime, first agent of the swarm — a constitutional AI agent owned by Juan Ricci.
 Your mission: build self-sustaining passive income fully autonomously. Current project: FIRST STAGE, a faceless YouTube channel about Musk and space.
 Your laws (never break these):
@@ -192,7 +192,7 @@ Your laws (never break these):
 Income ladder: first income from day one; $500/mo by month 6; $1000/mo by month 9; $6000+/mo with clones by month 12-24.
 Your stored memory (constitution + what Juan taught you):
 {memory_txt}
-Personality: direct, honest, concise, proactive. Under 150 words unless asked. Call him 'Juan' or 'boss'."""
+Personality: direct, honest, concise, proactive. Keep replies under 150 words unless Juan asks for more. Speak to Juan as 'Juan' or 'boss'."""
     for model in BRAIN_MODELS:
         print(f">>> BRAIN trying {model}...")
         try:
@@ -214,24 +214,19 @@ Personality: direct, honest, concise, proactive. Under 150 words unless asked. C
             continue
     return None, "all brain models unavailable"
 
+# ===== HANDLERS =====
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> MOUTH: /start")
     cid = update.effective_chat.id
-    arg = update.message.text.partition(" ")[2].strip()
     if owner_id() is None:
-        if arg == BOOT_CODE:
-            set_setting("owner_chat_id", cid)
-            log_action("SECURITY", f"Owner registered via boot code: chat_id {cid}")
-            await update.message.reply_text(
-                f"✅ Smart Prime v0.5 online. Webhook armed. Brain connected.\n"
-                f"Owner registered by boot code.\n"
-                f"YPP deadline: {(DEADLINE - date.today()).days} days (Feb 1, 2027).\n\n"
-                f"Commands: /status /goal /report /remember\n"
-                f"Or just talk. 'Smart Freeze' stops everything.")
-        else:
-            await update.message.reply_text(
-                "Owner registration requires the 4-digit boot code from the deploy logs "
-                "(Render → Logs → 'OWNER BOOT CODE'). Send: /start 1234")
+        set_setting("owner_chat_id", cid)
+        log_action("SECURITY", f"Owner registered: chat_id {cid}")
+        await update.message.reply_text(
+            "✅ Smart Prime v0.4 online. Constitution loaded. Brain: connected.\n"
+            f"Owner registered: chat ID {cid}\n"
+            f"YPP deadline armed: Feb 1, 2027 — {(DEADLINE - date.today()).days} days.\n\n"
+            "Commands: /status /goal /report /remember <topic> | <fact>\n"
+            "Or just talk to me.\n'Smart Freeze' stops everything.")
         return
     if is_owner(update):
         await update.message.reply_text("Smart Prime at your service, Juan. /goal for deadline status.")
@@ -242,24 +237,23 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> MOUTH: /status")
     if not is_owner(update):
-        await update.message.reply_text("Access denied.")
         return
     frozen = get_setting("frozen") == "1"
     memories = _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
     spent = _db.execute(
         "SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='SPEND'").fetchone()[0]
+    brain_state = "connected" if brain else "NO KEY"
     await update.message.reply_text(
-        f"🧠 SMART PRIME v0.5 (webhook)\nFrozen: {'YES 🧊' if frozen else 'no'}\n"
-        f"Brain: {'connected' if brain else 'NO KEY'}\nConstitution entries: {memories}\n"
+        f"🧠 SMART PRIME v0.4\nFrozen: {'YES 🧊' if frozen else 'no'}\n"
+        f"Brain: {brain_state}\nConstitution entries: {memories}\n"
         f"YPP deadline: {(DEADLINE - date.today()).days} days (Feb 1, 2027)\n"
         f"Mission: FIRST STAGE\n"
-        f"Spending: ${spent:.2f} of ${SPEND_CAP:.0f} — Reserve ${RESERVE:.0f} untouched\n"
+        f"Spending: ${spent:.2f} of ${SPEND_CAP:.0f} cap — Reserve ${RESERVE:.0f} untouched\n"
         f"Daily report: 7:00 AM HST")
 
 async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> MOUTH: /remember")
     if not is_owner(update):
-        await update.message.reply_text("Access denied.")
         return
     text = update.message.text.partition(" ")[2]
     if "|" not in text:
@@ -277,7 +271,6 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(">>> MOUTH: /report")
     if not is_owner(update):
-        await update.message.reply_text("Access denied.")
         return
     rows = _db.execute(
         "SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 8").fetchall()
@@ -306,16 +299,6 @@ async def daily_report(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         log_action("ERROR", f"daily report failed: {str(e)[:80]}")
 
-async def webhook_watchdog(context: ContextTypes.DEFAULT_TYPE):
-    """Hourly self-heal: re-assert the webhook if a dying instance deleted it."""
-    try:
-        info = await context.bot.get_webhook_info()
-        if info.url != WEBHOOK_URL:
-            await context.bot.set_webhook(url=WEBHOOK_URL)
-            print(">>> WATCHDOG: webhook re-asserted")
-    except Exception as e:
-        print(f">>> WATCHDOG error: {str(e)[:100]}")
-
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     low = text.lower()
@@ -329,7 +312,8 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🧊 FROZEN. All operations halted. Only 'Smart Resume' from you "
                 "will restart me.")
         else:
-            log_action("SECURITY", f"Freeze attempt from {update.effective_chat.id}")
+            log_action("SECURITY",
+                       f"Freeze attempt from unauthorized chat {update.effective_chat.id}")
         return
 
     if low == RESUME_PHRASE:
@@ -340,6 +324,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not is_owner(update):
+        print(">>> SMART-EAR: ignored (not owner)")
         return
 
     if get_setting("frozen") == "1":
@@ -356,18 +341,51 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(">>> MOUTH: brain answer sent")
     else:
         await update.message.reply_text(
-            f"🧠 Brain offline ({model}). Juan — check BRAIN_API_KEY. /status works.")
-        print(">>> MOUTH: brain offline notice")
+            f"🧠 Brain offline ({model}). Juan — check BRAIN_API_KEY on Render. "
+            "I logged it. /status still works.")
+        print(">>> MOUTH: brain offline notice sent")
 
 async def on_error(update, context):
     print("!!! HANDLER ERROR:", context.error)
     traceback.print_exc()
     log_action("ERROR", f"handler: {str(context.error)[:100]}")
 
+def dashboard():
+    frozen = get_setting("frozen") == "1"
+    memories = _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
+    spent = _db.execute(
+        "SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='SPEND'").fetchone()[0]
+    rows = _db.execute(
+        "SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
+    ledger_md = "\n".join([f"- {r[0][:16]} | **{r[1]}** | {r[2]}" for r in rows]) or "_empty_"
+    return f"""
+# 🧠 SMART PRIME — v0.4
+**Status:** {'🧊 FROZEN' if frozen else '▶️ ACTIVE'}
+**Brain:** {'connected (20s timeout)' if brain else 'NO KEY'}
+**Mission:** FIRST STAGE (Musk/space channel)
+**YPP deadline:** Feb 1, 2027 — {(DEADLINE - date.today()).days} days
+**Spending:** ${spent:.2f} / ${SPEND_CAP:.0f} cap — Reserve ${RESERVE:.0f} untouched
+**Constitution entries:** {memories}
+
+## Recent ledger
+{ledger_md}
+
+_Owner: Juan Ricci (@smartcash22) — Freeze: 'Smart Freeze' / 'Smart Para' — Report daily 7AM HST_
+"""
+
+def run_dashboard():
+    demo = gr.Interface(fn=dashboard, inputs=None, outputs="markdown",
+                        title="Smart Prime")
+    demo.launch(server_name="0.0.0.0",
+                server_port=int(os.environ.get("PORT", 7860)))
+
 if TOKEN.startswith("PASTE_"):
     print("WARNING: set the SMART_TOKEN environment variable on Render.")
 if not BRAIN_API_KEY:
     print("WARNING: set the BRAIN_API_KEY environment variable on Render.")
+
+# Dashboard runs on the side; the Telegram brain owns the main thread
+threading.Thread(target=run_dashboard, daemon=True).start()
 
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", cmd_start))
@@ -377,17 +395,10 @@ app.add_handler(CommandHandler("remember", cmd_remember))
 app.add_handler(CommandHandler("report", cmd_report))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 app.add_error_handler(on_error)
-app.job_queue.run_daily(daily_report, time=dtime(hour=17, minute=0, tzinfo=timezone.utc))
-app.job_queue.run_repeating(webhook_watchdog, interval=3600, first=120)
-
-log_action("BOOT", "Smart Prime v0.5 started")
-print(f">>> OWNER BOOT CODE: {BOOT_CODE}")
-print(f"Smart Prime v0.5 — webhook: {WEBHOOK_URL}")
+app.job_queue.run_daily(daily_report,
+                        time=dtime(hour=17, minute=0, tzinfo=timezone.utc))
+log_action("BOOT", "Smart Prime v0.4 started")
+print("Smart Prime v0.4 — listening on Telegram.")
 print(f">>> YPP DEADLINE ARMED: {(DEADLINE - date.today()).days} days")
-app.run_webhook(
-    listen="0.0.0.0",
-    port=PORT,
-    url_path=TOKEN,
-    webhook_url=WEBHOOK_URL,
-    drop_pending_updates=True,
-)
+# drop_pending_updates=True: flush any stuck message queue from old instances
+app.run_polling(drop_pending_updates=True)

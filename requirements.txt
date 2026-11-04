@@ -1,2 +1,8 @@
 python-telegram-bot[job-queue]>=21,<22
+gradio>=4.0
 openai>=1.0
+ddgs
+edge-tts
+imageio-ffmpeg
+fastapi
+uvicorn

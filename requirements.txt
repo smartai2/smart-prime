@@ -6,3 +6,6 @@ edge-tts
 imageio-ffmpeg
 fastapi
 uvicorn
+google-api-python-client
+google-auth-oauthlib
+praw

@@ -1,5 +1,5 @@
 """
-SMART PRIME v1.5 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v2.0 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -106,12 +106,12 @@ async def cmd_start(u, c):
     if str(cid) == JUAN_CHAT_ID:
         if str(owner_id()) != str(cid):
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
-        await u.message.reply_text("Smart Prime v1.5 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        await u.message.reply_text("Smart Prime v2.0 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
         return
     if owner_id() is None:
         if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v1.5 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v2.0 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -122,7 +122,7 @@ async def cmd_start(u, c):
 
 async def cmd_status(u, c):
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v1.5\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v2.0\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if not is_owner(u): return
@@ -254,6 +254,10 @@ async def daily_report(c):
     tk = "reported_" + date.today().isoformat()
     if get_setting(tk): return
     set_setting(tk, "1")
+    try:
+        _yt_metrics_update()
+    except Exception:
+        pass
     mem = _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
     rows = _db.execute("SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 5").fetchall()
     recent = "\n".join(f"· {r[0][:16]} | {r[1]} | {r[2]}" for r in rows) or "· quiet"
@@ -276,6 +280,9 @@ async def on_message(u, c):
             set_setting("frozen", "0"); log_action("CONTROL", "RESUMED")
             await u.message.reply_text("Resumed. Continuing the mission.")
         return
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     if get_setting("frozen") == "1":
         await u.message.reply_text("Frozen. 'Smart Resume' to wake me."); return
@@ -306,6 +313,148 @@ if not BRAIN_API_KEY: print("WARNING: set BRAIN_API_KEY env var.")
 BOOT = str(random.randint(1000, 9999))
 print(f">>> OWNER BOOT CODE: {BOOT}")
 
+
+# ============ MODULE 6: THE VOICE (YouTube + Reddit hands) ============
+YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload",
+             "https://www.googleapis.com/auth/youtube.readonly",
+             "https://www.googleapis.com/auth/yt-analytics.readonly"]
+
+def _yt_client_config():
+    cid = os.environ.get("YT_CLIENT_ID", ""); sec = os.environ.get("YT_CLIENT_SECRET", "")
+    return {"installed": {"client_id": cid, "client_secret": sec,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost"]}}
+
+def _yt_creds():
+    raw = get_setting("yt_token")
+    if not raw: return None
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        creds = Credentials.from_authorized_user_info(json.loads(raw))
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            set_setting("yt_token", creds.to_json())
+        return creds
+    except Exception as e:
+        log_action("ERROR", f"yt_creds: {str(e)[:80]}")
+        return None
+
+def _yt_metrics_update():
+    creds = _yt_creds()
+    if not creds: return None
+    from googleapiclient.discovery import build
+    from datetime import timedelta
+    yt = build("youtube", "v3", credentials=creds)
+    ch = yt.channels().list(part="statistics", mine=True).execute()
+    subs = int(ch["items"][0]["statistics"].get("subscriberCount", 0))
+    an = build("youtubeAnalytics", "v2", credentials=creds)
+    end = date.today(); start = end - timedelta(days=365)
+    r = an.reports().query(ids="channel==MINE", startDate=start.isoformat(),
+                           endDate=end.isoformat(), metrics="estimatedMinutesWatched").execute()
+    mins = float(r["rows"][0][0]) if r.get("rows") else 0.0
+    set_setting("subs_now", subs); set_setting("hours_now", round(mins / 60, 1))
+    return subs, round(mins / 60, 1)
+
+async def cmd_connect_youtube(u, c):
+    if not is_owner(u): return
+    if not os.environ.get("YT_CLIENT_ID"):
+        await u.message.reply_text("Add YT_CLIENT_ID and YT_CLIENT_SECRET to Render Environment first (guide Step A)."); return
+    from google_auth_oauthlib.flow import Flow
+    flow = Flow.from_client_config(_yt_client_config(), scopes=YT_SCOPES)
+    flow.redirect_uri = "http://localhost"
+    url, _ = flow.authorization_url(access_type="offline", prompt="consent")
+    await u.message.reply_text("STEP 1 - open this link while signed into the FIRST STAGE Google account:\n\n" + url +
+        "\n\nSTEP 2 - authorize everything. Browser will show 'localhost refused to connect' - that is NORMAL."
+        "\nSTEP 3 - copy the FULL address from the browser's address bar (starts with http://localhost/?code=...) and paste it right here in this chat.")
+
+async def cmd_yt_token(u, c):
+    if not is_owner(u): return
+    text = u.message.text.strip()
+    if "code=" not in text:
+        await u.message.reply_text("Paste the full localhost URL from the browser address bar."); return
+    from google_auth_oauthlib.flow import Flow
+    flow = Flow.from_client_config(_yt_client_config(), scopes=YT_SCOPES)
+    flow.redirect_uri = "http://localhost"
+    try:
+        flow.fetch_token(authorization_response=text)
+        set_setting("yt_token", flow.credentials.to_json())
+        log_action("YT", "connected")
+        await u.message.reply_text("YouTube hands connected. /yt_metrics for live numbers. /yt_upload to publish a render. Metrics auto-feed the goal tracker from now on.")
+    except Exception as e:
+        await u.message.reply_text("Token exchange failed: " + str(e)[:200])
+
+async def cmd_yt_metrics(u, c):
+    if not is_owner(u): return
+    try:
+        r = _yt_metrics_update()
+        if r: await u.message.reply_text(f"YouTube live: {r[0]} subscribers | {r[1]} watch hours (trailing 365 days).")
+        else: await u.message.reply_text("YouTube not connected. /connect_youtube")
+    except Exception as e:
+        await u.message.reply_text("Metrics failed: " + str(e)[:200])
+
+async def cmd_yt_upload(u, c):
+    if not is_owner(u): return
+    creds = _yt_creds()
+    if not creds:
+        await u.message.reply_text("Connect first: /connect_youtube"); return
+    t = u.message.text.partition(" ")[2].strip()
+    title = t or "Starship Flight 15: First Ship Catch Attempt - What Could Go Wrong"
+    renders = sorted(f for f in os.listdir(RENDER_DIR) if f.endswith(".mp4"))
+    if not renders:
+        await u.message.reply_text("No renders yet. Send me clips + narration, then /render."); return
+    path = os.path.join(RENDER_DIR, renders[-1])
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+    yt = build("youtube", "v3", credentials=creds)
+    body = {"snippet": {"title": title, "description": "FIRST STAGE - spaceflight explained. Data over hype.\n\nFootage: SpaceX. AI narration, disclosed per YouTube policy.", "categoryId": "28"},
+            "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True}}
+    try:
+        req = yt.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(path, chunksize=-1, resumable=True))
+        resp = None
+        while resp is None:
+            s, resp = req.next_chunk()
+        log_action("YT", "uploaded " + resp["id"])
+        await u.message.reply_text("LIVE: https://youtu.be/" + resp["id"])
+    except Exception as e:
+        log_action("ERROR", "yt_upload " + str(e)[:120])
+        await u.message.reply_text("Upload failed: " + str(e)[:250])
+
+async def cmd_connect_reddit(u, c):
+    if not is_owner(u): return
+    t = u.message.text.partition(" ")[2].split()
+    if len(t) < 2:
+        await u.message.reply_text("Usage: /connect_reddit <client_id> <client_secret> (guide Step B - reddit.com/prefs/apps)"); return
+    set_setting("reddit_id", t[0]); set_setting("reddit_secret", t[1])
+    try:
+        import praw
+        praw.Reddit(client_id=t[0], client_secret=t[1], user_agent="SmartPrime/1.0")
+        log_action("REDDIT", "connected")
+        await u.message.reply_text("Reddit eyes connected. /reddit_scan Starship Flight 15 to find threads worth engaging.")
+    except Exception as e:
+        await u.message.reply_text("Reddit connect failed: " + str(e)[:200])
+
+async def cmd_reddit_scan(u, c):
+    if not is_owner(u): return
+    if not get_setting("reddit_id"):
+        await u.message.reply_text("Connect first: /connect_reddit"); return
+    import praw
+    r = praw.Reddit(client_id=get_setting("reddit_id"), client_secret=get_setting("reddit_secret"), user_agent="SmartPrime/1.0")
+    q = u.message.text.partition(" ")[2].strip() or "Starship Flight 15"
+    out = []
+    for sub in ["spacexlounge", "SpaceX"]:
+        try:
+            for p in r.subreddit(sub).search(q, sort="new", time_filter="week", limit=5):
+                out.append(f"r/{sub}: {p.title[:90]} ({p.score} pts)\n{p.url}")
+        except Exception as e:
+            log_action("REDDIT", f"scan fail r/{sub}: {str(e)[:60]}")
+    log_action("REDDIT", "scan " + q[:30])
+    if out:
+        await u.message.reply_text("ENGAGEMENT TARGETS:\n\n" + "\n\n".join(out[:8]) + "\n\nReply with a thread number and I draft a value-first comment for you to post.")
+    else:
+        await u.message.reply_text("No fresh threads this week for: " + q)
+
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", cmd_start))
 app.add_handler(CommandHandler("status", cmd_status))
@@ -316,6 +465,12 @@ app.add_handler(CommandHandler("research", cmd_research))
 app.add_handler(CommandHandler("voice", cmd_voice))
 app.add_handler(CommandHandler("render", cmd_render))
 app.add_handler(CommandHandler("inbox", cmd_inbox))
+app.add_handler(CommandHandler("connect_youtube", cmd_connect_youtube))
+app.add_handler(MessageHandler(filters.Regex(r"^http://localhost"), cmd_yt_token))
+app.add_handler(CommandHandler("yt_upload", cmd_yt_upload))
+app.add_handler(CommandHandler("yt_metrics", cmd_yt_metrics))
+app.add_handler(CommandHandler("connect_reddit", cmd_connect_reddit))
+app.add_handler(CommandHandler("reddit_scan", cmd_reddit_scan))
 app.add_handler(MessageHandler(filters.Document.ALL, on_file))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 app.add_error_handler(on_error)
@@ -330,8 +485,8 @@ def dashboard():
     crash_txt = ""
     if os.path.exists("bot_crash.log"):
         crash_txt = "\n\n## BOT CRASH LOG\n```\n" + open("bot_crash.log").read()[-1200:] + "\n```"
-    return f"""# SMART PRIME v1.5 — THE HANDS
-**Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'}
+    return f"""# SMART PRIME v2.0 — THE HANDS
+**Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'} | **YT:** {'connected' if get_setting('yt_token') else '-'} | **Reddit:** {'connected' if get_setting('reddit_id') else '-'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}
 ## Renders

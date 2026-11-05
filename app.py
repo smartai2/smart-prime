@@ -1,5 +1,5 @@
 """
-SMART PRIME v1.2 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v1.3 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -106,12 +106,12 @@ async def cmd_start(u, c):
     if str(cid) == JUAN_CHAT_ID:
         if str(owner_id()) != str(cid):
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
-        await u.message.reply_text("Smart Prime v1.2 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        await u.message.reply_text("Smart Prime v1.3 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
         return
     if owner_id() is None:
         if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v1.2 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v1.3 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -122,7 +122,7 @@ async def cmd_start(u, c):
 
 async def cmd_status(u, c):
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v1.2\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v1.3\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if not is_owner(u): return
@@ -319,13 +319,16 @@ def dashboard():
     renders = sorted(os.listdir(RENDER_DIR), reverse=True)[:5]
     inbox = sorted(os.listdir(INBOX))
     links = "\n".join(f"- [{r}](/dl/{r})" for r in renders) or "_none yet_"
-    return f"""# SMART PRIME v1.2 — THE HANDS
+    crash_txt = ""
+    if os.path.exists("bot_crash.log"):
+        crash_txt = "\n\n## BOT CRASH LOG\n```\n" + open("bot_crash.log").read()[-1200:] + "\n```"
+    return f"""# SMART PRIME v1.3 — THE HANDS
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}
 ## Renders
 {links}
-_Owner: Juan Ricci (@smartcash22) — Freeze: 'Smart Freeze' / 'Smart Para' — Reports 7AM HST_"""
+_Owner: Juan Ricci (@smartcash22) — Freeze: 'Smart Freeze' / 'Smart Para' — Reports 7AM HST_""" + crash_txt
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -338,7 +341,16 @@ def dl(fname: str):
 demo = gr.Interface(fn=dashboard, inputs=None, outputs="markdown", title="Smart Prime")
 server = gr.mount_gradio_app(api, demo, path="/")
 
-threading.Thread(target=app.run_polling, kwargs={"drop_pending_updates": True}, daemon=True).start()
+def _run_bot():
+    try:
+        app.run_polling(drop_pending_updates=True, stop_signals=None)
+    except Exception:
+        err = traceback.format_exc()
+        print("!!! BOT THREAD CRASHED !!!")
+        print(err[-1500:])
+        with open("bot_crash.log", "w") as f:
+            f.write(err)
+threading.Thread(target=_run_bot, daemon=True).start()
 import uvicorn
 print(f">>> YPP DEADLINE ARMED: {(DEADLINE - date.today()).days} days")
 uvicorn.run(server, host="0.0.0.0", port=PORT)

@@ -1,5 +1,5 @@
 """
-SMART PRIME v1.0 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v1.1 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -99,12 +99,19 @@ Style: direct, concise, under 150 words unless asked. Call him Juan or boss."""
             log_action("BRAIN", f"{model} failed: {str(e)[:80]}"); continue
     return None, "all brain models unavailable"
 
+JUAN_CHAT_ID = "8363286514"
+
 async def cmd_start(u, c):
     cid = u.effective_chat.id; arg = u.message.text.partition(" ")[2].strip()
+    if str(cid) == JUAN_CHAT_ID:
+        if str(owner_id()) != str(cid):
+            set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
+        await u.message.reply_text("Smart Prime v1.1 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        return
     if owner_id() is None:
-        if arg and len(arg) >= 4:
+        if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v1.0 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v1.1 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -115,7 +122,7 @@ async def cmd_start(u, c):
 
 async def cmd_status(u, c):
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v1.0\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v1.1\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if not is_owner(u): return
@@ -184,16 +191,13 @@ async def cmd_render(u, c):
         await u.message.reply_text(f"Need narration MP3 + {len(vids)} clips in inbox. Send them to this chat as files. /inbox to check."); return
     import imageio_ffmpeg
     FF = imageio_ffmpeg.get_ffmpeg_exe()
-    aud = float(subprocess.run([FF, "-i", narr], capture_output=True, text=True).stderr.split("Duration: ")[1].split(",")[0].strip().replace(":","").split())
-    dur = aud  # reuse AUD from probe-like parse below instead
-    import json as _j
-    pr = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", narr], capture_output=True, text=True)
-    dur = float(_j.loads(pr.stdout)["format"]["duration"])
+    def _dur(p):
+        r = subprocess.run([FF, "-i", p], capture_output=True, text=True)
+        m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", r.stderr)
+        return int(m.group(1))*3600 + int(m.group(2))*60 + float(m.group(3))
+    dur = _dur(narr)
     clips = [os.path.join(INBOX, v) for v in vids]
-    cdurs = []
-    for p in clips:
-        pr = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", p], capture_output=True, text=True)
-        cdurs.append(float(_j.loads(pr.stdout)["format"]["duration"]))
+    cdurs = [_dur(p) for p in clips]
     segs, i, total = [], 0, 0.0
     while total < dur:
         k, f = i % len(clips), (1.25 if (i // len(clips)) == 1 else 1.0)
@@ -246,7 +250,10 @@ async def news_job(c):
 
 async def daily_report(c):
     oid = owner_id()
-    if not oid: return
+    if not oid or get_setting("frozen") == "1": return
+    tk = "reported_" + date.today().isoformat()
+    if get_setting(tk): return
+    set_setting(tk, "1")
     mem = _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
     rows = _db.execute("SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 5").fetchall()
     recent = "\n".join(f"· {r[0][:16]} | {r[1]} | {r[2]}" for r in rows) or "· quiet"
@@ -312,7 +319,7 @@ def dashboard():
     renders = sorted(os.listdir(RENDER_DIR), reverse=True)[:5]
     inbox = sorted(os.listdir(INBOX))
     links = "\n".join(f"- [{r}](/dl/{r})" for r in renders) or "_none yet_"
-    return f"""# SMART PRIME v1.0 — THE HANDS
+    return f"""# SMART PRIME v1.1 — THE HANDS
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}

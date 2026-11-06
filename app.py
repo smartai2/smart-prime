@@ -1,5 +1,5 @@
 """
-SMART PRIME v2.0 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v2.2 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -106,12 +106,12 @@ async def cmd_start(u, c):
     if str(cid) == JUAN_CHAT_ID:
         if str(owner_id()) != str(cid):
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
-        await u.message.reply_text("Smart Prime v2.0 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        await u.message.reply_text("Smart Prime v2.2 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
         return
     if owner_id() is None:
         if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v2.0 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v2.2 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -121,10 +121,16 @@ async def cmd_start(u, c):
         await u.message.reply_text(f"Private agent. Your chat ID: {cid}. Access denied.")
 
 async def cmd_status(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v2.0\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v2.2\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     t = u.message.text.partition(" ")[2].lower(); parts = t.split()
     for i, p in enumerate(parts):
@@ -135,6 +141,9 @@ async def cmd_goal(u, c):
     await u.message.reply_text(goal_status())
 
 async def cmd_remember(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     t = u.message.text.partition(" ")[2]
     if "|" not in t:
@@ -145,11 +154,17 @@ async def cmd_remember(u, c):
     await u.message.reply_text(f"Remembered under '{topic}'.")
 
 async def cmd_report(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     rows = _db.execute("SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 8").fetchall()
     await u.message.reply_text("\n".join(["RECENT LEDGER"] + [f"· {r[0][:16]} | {r[1]} | {r[2]}" for r in rows]))
 
 async def cmd_research(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     t = u.message.text.partition(" ")[2].strip() or "Starship SpaceX latest news"
     await c.bot.send_chat_action(chat_id=u.effective_chat.id, action=ChatAction.TYPING)
@@ -163,6 +178,9 @@ async def cmd_research(u, c):
     else: await u.message.reply_text("Brain offline. Raw results saved to ledger.")
 
 async def cmd_voice(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     t = u.message.text.partition(" ")[2].strip()
     if not t:
@@ -181,6 +199,9 @@ async def cmd_voice(u, c):
     log_action("VOICE", f"{len(chunks)} chunk(s) voiced")
 
 async def cmd_render(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     t = u.message.text.partition(" ")[2].strip()
     narr = None
@@ -221,11 +242,17 @@ async def cmd_render(u, c):
         await u.message.reply_text("Render failed: " + r.stderr[-300:])
 
 async def cmd_inbox(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     files = os.listdir(INBOX)
     await u.message.reply_text(f"INBOX ({len(files)}):\n" + ("\n".join("· " + f for f in sorted(files)) if files else "(empty — send narration MP3 + clips as files)"))
 
 async def on_file(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     doc = u.message.document
     if not doc: return
@@ -280,6 +307,9 @@ async def on_message(u, c):
             set_setting("frozen", "0"); log_action("CONTROL", "RESUMED")
             await u.message.reply_text("Resumed. Continuing the mission.")
         return
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
@@ -358,6 +388,9 @@ def _yt_metrics_update():
     return subs, round(mins / 60, 1)
 
 async def cmd_connect_youtube(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     if not os.environ.get("YT_CLIENT_ID"):
         await u.message.reply_text("Add YT_CLIENT_ID and YT_CLIENT_SECRET to Render Environment first (guide Step A)."); return
@@ -370,6 +403,9 @@ async def cmd_connect_youtube(u, c):
         "\nSTEP 3 - copy the FULL address from the browser's address bar (starts with http://localhost/?code=...) and paste it right here in this chat.")
 
 async def cmd_yt_token(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     text = u.message.text.strip()
     if "code=" not in text:
@@ -386,6 +422,9 @@ async def cmd_yt_token(u, c):
         await u.message.reply_text("Token exchange failed: " + str(e)[:200])
 
 async def cmd_yt_metrics(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     try:
         r = _yt_metrics_update()
@@ -395,16 +434,24 @@ async def cmd_yt_metrics(u, c):
         await u.message.reply_text("Metrics failed: " + str(e)[:200])
 
 async def cmd_yt_upload(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     creds = _yt_creds()
     if not creds:
         await u.message.reply_text("Connect first: /connect_youtube"); return
     t = u.message.text.partition(" ")[2].strip()
     title = t or "Starship Flight 15: First Ship Catch Attempt - What Could Go Wrong"
-    renders = sorted(f for f in os.listdir(RENDER_DIR) if f.endswith(".mp4"))
-    if not renders:
-        await u.message.reply_text("No renders yet. Send me clips + narration, then /render."); return
-    path = os.path.join(RENDER_DIR, renders[-1])
+    cands = []
+    for d in (RENDER_DIR, INBOX):
+        for fn in os.listdir(d):
+            if fn.lower().endswith(".mp4"):
+                cands.append(os.path.join(d, fn))
+    cands.sort(key=os.path.getmtime)
+    if not cands:
+        await u.message.reply_text("No MP4s found. Send me a video file, or /render first."); return
+    path = cands[-1]
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
     yt = build("youtube", "v3", credentials=creds)
@@ -422,6 +469,9 @@ async def cmd_yt_upload(u, c):
         await u.message.reply_text("Upload failed: " + str(e)[:250])
 
 async def cmd_connect_reddit(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     t = u.message.text.partition(" ")[2].split()
     if len(t) < 2:
@@ -436,6 +486,9 @@ async def cmd_connect_reddit(u, c):
         await u.message.reply_text("Reddit connect failed: " + str(e)[:200])
 
 async def cmd_reddit_scan(u, c):
+    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
+        set_setting("owner_chat_id", u.effective_chat.id)
+        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
     if not get_setting("reddit_id"):
         await u.message.reply_text("Connect first: /connect_reddit"); return
@@ -485,7 +538,7 @@ def dashboard():
     crash_txt = ""
     if os.path.exists("bot_crash.log"):
         crash_txt = "\n\n## BOT CRASH LOG\n```\n" + open("bot_crash.log").read()[-1200:] + "\n```"
-    return f"""# SMART PRIME v2.0 — THE HANDS
+    return f"""# SMART PRIME v2.2 — THE HANDS
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'} | **YT:** {'connected' if get_setting('yt_token') else '-'} | **Reddit:** {'connected' if get_setting('reddit_id') else '-'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}

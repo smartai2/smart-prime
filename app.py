@@ -1,5 +1,5 @@
 """
-SMART PRIME v2.4 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v2.5 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -80,7 +80,7 @@ def web_search(q, n=5):
     except Exception as e:
         log_action("SEARCH", f"fail {q[:40]}: {str(e)[:60]}"); return []
 
-async def brain_ask(user_text, extra=""):
+async def brain_ask(user_text, extra="", models=None):
     if not brain: return None, "no BRAIN_API_KEY"
     mem = _db.execute("SELECT kind,content,verification FROM memory ORDER BY id DESC LIMIT 12").fetchall()
     memory_txt = "\n".join(f"- [{m[2]}] {m[0]}: {m[1]}" for m in mem)
@@ -89,7 +89,7 @@ Laws: Juan is sovereign. Smart Freeze/Para halt everything. $200 cap, $100 reser
 {extra}
 Memory:\n{memory_txt}
 Style: direct, concise, under 150 words unless asked. Call him Juan or boss."""
-    for model in BRAIN_MODELS:
+    for model in (models or BRAIN_MODELS):
         try:
             r = await brain.chat.completions.create(model=model, messages=[{"role":"system","content":system},{"role":"user","content":user_text}], max_tokens=2000)
             if getattr(r, "choices", None):
@@ -106,12 +106,12 @@ async def cmd_start(u, c):
     if str(cid) == JUAN_CHAT_ID:
         if str(owner_id()) != str(cid):
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
-        await u.message.reply_text("Smart Prime v2.4 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        await u.message.reply_text("Smart Prime v2.5 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
         return
     if owner_id() is None:
         if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v2.4 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v2.5 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -125,7 +125,7 @@ async def cmd_status(u, c):
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v2.4\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v2.5\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -254,13 +254,18 @@ async def on_file(u, c):
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    doc = u.message.document
+    doc = u.message.document or u.message.video
     if not doc: return
-    p = os.path.join(INBOX, doc.file_name or f"file_{datetime.now().timestamp()}")
-    f = await c.bot.get_file(doc.file_id)
-    await f.download_to_drive(p)
-    log_action("INBOX", doc.file_name)
-    await u.message.reply_text(f"Received: {doc.file_name} ({doc.file_size//1024} KB). /inbox to see all.")
+    name = getattr(doc, "file_name", None) or f"video_{datetime.now().timestamp()}.mp4"
+    p = os.path.join(INBOX, name)
+    try:
+        f = await c.bot.get_file(doc.file_id)
+        await f.download_to_drive(p)
+        log_action("INBOX", name)
+        await u.message.reply_text(f"Received: {name} ({os.path.getsize(p)//1024} KB). /inbox to see all.")
+    except Exception as e:
+        log_action("ERROR", f"inbox download: {str(e)[:80]}")
+        await u.message.reply_text("Download failed. Resend via paperclip > File. Over 20 MB will not work - use the small version of the video.")
 
 async def news_job(c):
     oid = owner_id()
@@ -510,6 +515,25 @@ async def cmd_reddit_scan(u, c):
     else:
         await u.message.reply_text("No fresh threads this week for: " + q)
 
+
+KIMI_MODELS = ["moonshotai/kimi-k2:free", "moonshotai/kimi-k2"]
+
+async def cmd_kimi(u, c):
+    if not is_owner(u): return
+    t = u.message.text.partition(" ")[2].strip()
+    if not t:
+        await u.message.reply_text("Usage: /kimi <question> - consults Kimi, co-architect of the mission."); return
+    await c.bot.send_chat_action(chat_id=u.effective_chat.id, action=ChatAction.TYPING)
+    extra = ("You are Kimi, co-architect of Smart Prime and the FIRST STAGE YouTube channel (Musk/space), now advising Smart Prime directly. "
+             "Owner: Juan Ricci. Mission: autonomous passive income. YPP deadline Feb 1 2027. "
+             "Give Smart Prime specific, expert, actionable operational guidance: strategy, production, distribution, technical fixes. Under 300 words.")
+    ans, model = await brain_ask(t, extra=extra, models=KIMI_MODELS)
+    log_action("KIMI", f"consult via {model}")
+    if ans:
+        await u.message.reply_text("KIMI: " + ans[:4000])
+    else:
+        await u.message.reply_text("Kimi unreachable right now (free route may be busy; retry later).")
+
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", cmd_start))
 app.add_handler(CommandHandler("status", cmd_status))
@@ -526,7 +550,9 @@ app.add_handler(CommandHandler("yt_upload", cmd_yt_upload))
 app.add_handler(CommandHandler("yt_metrics", cmd_yt_metrics))
 app.add_handler(CommandHandler("connect_reddit", cmd_connect_reddit))
 app.add_handler(CommandHandler("reddit_scan", cmd_reddit_scan))
-app.add_handler(MessageHandler(filters.Document.ALL, on_file))
+app.add_handler(CommandHandler("kimi", cmd_kimi))
+app.add_handler(MessageHandler(filters.VIDEO, on_file))
+app.add_handler(MessageHandler(filters.ATTACHMENT, on_file))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 app.add_error_handler(on_error)
 app.job_queue.run_daily(daily_report, time=dtime(hour=17, minute=0, tzinfo=timezone.utc))
@@ -540,7 +566,7 @@ def dashboard():
     crash_txt = ""
     if os.path.exists("bot_crash.log"):
         crash_txt = "\n\n## BOT CRASH LOG\n```\n" + open("bot_crash.log").read()[-1200:] + "\n```"
-    return f"""# SMART PRIME v2.4 — THE HANDS
+    return f"""# SMART PRIME v2.5 — THE HANDS
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'} | **YT:** {'connected' if get_setting('yt_token') else '-'} | **Reddit:** {'connected' if get_setting('reddit_id') else '-'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}

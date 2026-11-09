@@ -1,5 +1,5 @@
 """
-SMART PRIME v2.5 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v2.6 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -106,12 +106,12 @@ async def cmd_start(u, c):
     if str(cid) == JUAN_CHAT_ID:
         if str(owner_id()) != str(cid):
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
-        await u.message.reply_text("Smart Prime v2.5 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        await u.message.reply_text("Smart Prime v2.6 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
         return
     if owner_id() is None:
         if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v2.5 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v2.6 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -125,7 +125,7 @@ async def cmd_status(u, c):
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v2.5\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v2.6\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -362,7 +362,7 @@ def _yt_client_config():
             "redirect_uris": ["http://localhost"]}}
 
 def _yt_creds():
-    raw = get_setting("yt_token")
+    raw = os.environ.get("YT_TOKEN", "") or get_setting("yt_token")
     if not raw: return None
     try:
         from google.oauth2.credentials import Credentials
@@ -427,6 +427,14 @@ async def cmd_yt_token(u, c):
         await u.message.reply_text("YouTube hands connected. /yt_metrics for live numbers. /yt_upload to publish a render. Metrics auto-feed the goal tracker from now on.")
     except Exception as e:
         await u.message.reply_text("Token exchange failed: " + str(e)[:200])
+
+async def cmd_yt_export(u, c):
+    if not is_owner(u): return
+    raw = get_setting("yt_token")
+    if not raw:
+        await u.message.reply_text("No token in memory. /connect_youtube first."); return
+    await u.message.reply_text("PERMANENCE KEY - add this to Render Environment as YT_TOKEN. It survives every redeploy forever:\n\n" + raw)
+    log_action("YT", "token exported")
 
 async def cmd_yt_metrics(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -534,7 +542,9 @@ async def cmd_kimi(u, c):
     else:
         await u.message.reply_text("Kimi unreachable right now (free route may be busy; retry later).")
 
-app = Application.builder().token(TOKEN).build()
+app = (Application.builder().token(TOKEN)
+       .connect_timeout(30).read_timeout(30).write_timeout(180).pool_timeout(60)
+       .build())
 app.add_handler(CommandHandler("start", cmd_start))
 app.add_handler(CommandHandler("status", cmd_status))
 app.add_handler(CommandHandler("goal", cmd_goal))
@@ -547,6 +557,7 @@ app.add_handler(CommandHandler("inbox", cmd_inbox))
 app.add_handler(CommandHandler("connect_youtube", cmd_connect_youtube))
 app.add_handler(MessageHandler(filters.Regex(r"^http://localhost"), cmd_yt_token))
 app.add_handler(CommandHandler("yt_upload", cmd_yt_upload))
+app.add_handler(CommandHandler("yt_export", cmd_yt_export))
 app.add_handler(CommandHandler("yt_metrics", cmd_yt_metrics))
 app.add_handler(CommandHandler("connect_reddit", cmd_connect_reddit))
 app.add_handler(CommandHandler("reddit_scan", cmd_reddit_scan))
@@ -566,7 +577,7 @@ def dashboard():
     crash_txt = ""
     if os.path.exists("bot_crash.log"):
         crash_txt = "\n\n## BOT CRASH LOG\n```\n" + open("bot_crash.log").read()[-1200:] + "\n```"
-    return f"""# SMART PRIME v2.5 — THE HANDS
+    return f"""# SMART PRIME v2.6 — THE HANDS
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'} | **YT:** {'connected' if get_setting('yt_token') else '-'} | **Reddit:** {'connected' if get_setting('reddit_id') else '-'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}

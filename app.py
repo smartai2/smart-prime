@@ -1,5 +1,5 @@
 """
-SMART PRIME v2.6 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v3.0 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -106,12 +106,12 @@ async def cmd_start(u, c):
     if str(cid) == JUAN_CHAT_ID:
         if str(owner_id()) != str(cid):
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
-        await u.message.reply_text("Smart Prime v2.6 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        await u.message.reply_text("Smart Prime v3.0 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
         return
     if owner_id() is None:
         if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v2.6 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v3.0 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -125,7 +125,7 @@ async def cmd_status(u, c):
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v2.6\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v3.0\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -271,6 +271,14 @@ async def news_job(c):
     oid = owner_id()
     if not oid or get_setting("frozen") == "1": return
     hits = web_search("SpaceX Starship news", 6) + web_search("Starship Flight 15", 4)
+    if get_setting("yt_token") and not get_setting("f15_recap_fetched"):
+        for h in hits:
+            href = (h.get("href") or "")
+            tl = (h.get("title") or "").lower()
+            if "youtube.com/watch" in href and "flight 15" in tl and any(k in tl for k in ("recap", "launch", "highlights")):
+                set_setting("f15_recap_fetched", "1")
+                await _auto_fetch_recap(href, c)
+                break
     lines = [h.get("title", "") for h in hits if h.get("title")]
     known = set((get_setting("news_seen") or "").split("||"))
     fresh = [l for l in lines if l and l not in known][:5]
@@ -391,6 +399,72 @@ def _yt_metrics_update():
     mins = float(r["rows"][0][0]) if r.get("rows") else 0.0
     set_setting("subs_now", subs); set_setting("hours_now", round(mins / 60, 1))
     return subs, round(mins / 60, 1)
+
+
+# ============ MODULE 7: THE CAMERA (autonomous source capture) ============
+STAGING = "staging"
+os.makedirs(STAGING, exist_ok=True)
+
+def _download_source(url):
+    """Download best <=1080p mp4 of a video URL. Returns (path, size_mb)."""
+    import yt_dlp
+    path = os.path.join(STAGING, f"src_{int(datetime.now().timestamp())}.mp4")
+    opts = {"format": "best[height<=1080][ext=mp4]/best[height<=1080]",
+            "outtmpl": path, "quiet": True, "noplaylist": True, "no_warnings": True}
+    yt_dlp.YoutubeDL(opts).download([url])
+    if not os.path.exists(path):
+        raise RuntimeError("download produced no file")
+    mb = os.path.getsize(path) // (1024 * 1024)
+    pr = subprocess.run(["ffprobe", "-v", "quiet", "-select_streams", "v:0",
+                         "-show_entries", "stream=height", "-of", "csv=p=0", path],
+                        capture_output=True, text=True)
+    try:
+        height = int(pr.stdout.strip().splitlines()[0])
+    except Exception:
+        height = 0
+    return path, mb, height
+
+async def cmd_fetch(u, c):
+    if not is_owner(u): return
+    url = u.message.text.partition(" ")[2].strip()
+    if not url:
+        await u.message.reply_text("Usage: /fetch <video link> - I download the native source for our videos, up to 1080p. No more screen recording."); return
+    await c.bot.send_chat_action(chat_id=u.effective_chat.id, action=ChatAction.RECORD_VIDEO)
+    try:
+        loop = asyncio.get_event_loop()
+        path, mb, h = await loop.run_in_executor(None, _download_source, url)
+        log_action("FETCH", f"{url[:60]} -> {mb}MB {h}p")
+        tag = "HD SOURCE" if h >= 720 else "WARNING: BELOW HD"
+        await u.message.reply_text(f"{tag}: {os.path.basename(path)} ({mb} MB, {h}p). Ready for assembly. /staging to see sources, /clear_staging to free disk.")
+    except Exception as e:
+        log_action("ERROR", "fetch " + str(e)[:120])
+        await u.message.reply_text("Fetch failed: " + str(e)[:180] + "\n\nRetry once. If it fails again, that source blocks datacenter downloads - capture fallback is manual, one clip, last resort.")
+
+async def cmd_staging(u, c):
+    if not is_owner(u): return
+    files = sorted(os.listdir(STAGING))
+    await u.message.reply_text("STAGING SOURCES:\n" + ("\n".join("· " + f for f in files) if files else "(empty)"))
+
+async def cmd_clear_staging(u, c):
+    if not is_owner(u): return
+    n = 0
+    for f in os.listdir(STAGING):
+        try: os.remove(os.path.join(STAGING, f)); n += 1
+        except Exception: pass
+    log_action("STAGING", f"cleared {n}")
+    await u.message.reply_text(f"Cleared {n} staged source(s). Disk freed.")
+
+async def _auto_fetch_recap(href, context):
+    try:
+        loop = asyncio.get_event_loop()
+        path, mb, h = await loop.run_in_executor(None, _download_source, href)
+        log_action("FETCH", f"auto: {href[:60]} -> {mb}MB {h}p")
+        tag = "HD" if h >= 720 else "BELOW-HD WARNING"
+        oid = owner_id()
+        if oid:
+            await context.bot.send_message(chat_id=int(oid), text=f"AUTONOMOUS CAPTURE ({tag}, {h}p): Flight 15 source secured ({mb} MB). Ready for Episode 2 assembly. /staging to confirm.")
+    except Exception as e:
+        log_action("ERROR", "auto_fetch " + str(e)[:100])
 
 async def cmd_connect_youtube(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -558,6 +632,9 @@ app.add_handler(CommandHandler("connect_youtube", cmd_connect_youtube))
 app.add_handler(MessageHandler(filters.Regex(r"^http://localhost"), cmd_yt_token))
 app.add_handler(CommandHandler("yt_upload", cmd_yt_upload))
 app.add_handler(CommandHandler("yt_export", cmd_yt_export))
+app.add_handler(CommandHandler("fetch", cmd_fetch))
+app.add_handler(CommandHandler("staging", cmd_staging))
+app.add_handler(CommandHandler("clear_staging", cmd_clear_staging))
 app.add_handler(CommandHandler("yt_metrics", cmd_yt_metrics))
 app.add_handler(CommandHandler("connect_reddit", cmd_connect_reddit))
 app.add_handler(CommandHandler("reddit_scan", cmd_reddit_scan))
@@ -577,7 +654,7 @@ def dashboard():
     crash_txt = ""
     if os.path.exists("bot_crash.log"):
         crash_txt = "\n\n## BOT CRASH LOG\n```\n" + open("bot_crash.log").read()[-1200:] + "\n```"
-    return f"""# SMART PRIME v2.6 — THE HANDS
+    return f"""# SMART PRIME v3.0 — THE HANDS
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'} | **YT:** {'connected' if get_setting('yt_token') else '-'} | **Reddit:** {'connected' if get_setting('reddit_id') else '-'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}

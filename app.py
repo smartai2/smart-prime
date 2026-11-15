@@ -1159,8 +1159,87 @@ def parse_plan(reply, sources):
     return {"title": title, "sequence": {"width": 1080, "height": 1920, "audio": True},
             "timeline": timeline, "sources": [source for source in sources if source["id"] in used]}
 
-async def produce_and_deliver(message, bot, topic, search, ask, stopped, log):
+def offline_narration(phrases, root):
+    """Synthesize the complete voice track without a network connection."""
+    import ctypes as c
+    from espeakng_loader import get_data_path, get_library_path
+
+    engine = c.CDLL(get_library_path())
+    callback_type = c.CFUNCTYPE(c.c_int, c.POINTER(c.c_short), c.c_int, c.c_void_p)
+    engine.espeak_Initialize.argtypes = [c.c_int, c.c_int, c.c_char_p, c.c_int]
+    engine.espeak_SetSynthCallback.argtypes = [callback_type]
+    engine.espeak_SetSynthCallback.restype = None
+    engine.espeak_SetVoiceByName.argtypes = [c.c_char_p]
+    engine.espeak_Synth.argtypes = [
+        c.c_char_p, c.c_size_t, c.c_uint, c.c_int, c.c_uint, c.c_uint, c.c_void_p, c.c_void_p,
+    ]
+    # The native library expects the parent of espeak-ng-data, and output
+    # mode 2 sends PCM to the callback on the calling thread.
+    sample_rate = engine.espeak_Initialize(
+        2, 0, os.fsencode(Path(get_data_path()).parent), 0x8000
+    )
+    if sample_rate <= 0:
+        raise RuntimeError("Local voice initialization failed")
+    samples = bytearray()
+
+    @callback_type
+    def collect(pcm, count, _events):
+        if pcm and count > 0:
+            samples.extend(c.string_at(pcm, count * c.sizeof(c.c_short)))
+        return 0
+
+    files = []
+    try:
+        if engine.espeak_SetVoiceByName(b"en-us+m3") != 0:
+            raise RuntimeError("Local narration voice unavailable")
+        engine.espeak_SetSynthCallback(collect)
+        for index, phrase in enumerate(phrases):
+            samples.clear()
+            utf8 = phrase.encode("utf-8")
+            if engine.espeak_Synth(utf8, len(utf8) + 1, 0, 1, 0, 1, None, None) != 0 or not samples:
+                raise RuntimeError("Local voice rendered no samples")
+            path = root / f"local_voice_{index}.wav"
+            with wave.open(str(path), "wb") as recording:
+                recording.setparams((1, 2, sample_rate, 0, "NONE", "not compressed"))
+                recording.writeframes(samples)
+            files.append(path)
+    finally:
+        engine.espeak_Terminate()
+    return files
+
+
+async def prepare_video_narration(plan, root, check, log):
     import edge_tts
+    from edge_tts.exceptions import EdgeTTSException
+    from aiohttp import ClientError
+
+    phrases = [phrase for scene in plan["timeline"] for phrase in scene["narration"]]
+    for voice in ("en-US-ChristopherNeural", "en-US-GuyNeural"):
+        files = []
+        try:
+            for index, phrase in enumerate(phrases):
+                check()
+                path = root / f"edge_voice_{index}.mp3"
+                await asyncio.wait_for(edge_tts.Communicate(phrase, voice).save(str(path)), timeout=18)
+                if not path.is_file() or path.stat().st_size == 0:
+                    raise EdgeTTSException("Empty audio")
+                files.append(path)
+            break
+        except (EdgeTTSException, ClientError, TimeoutError) as error:
+            log("VOICE", f"{voice} unavailable ({type(error).__name__})")
+    else:
+        check()
+        files = await asyncio.to_thread(offline_narration, phrases, root)
+        log("VOICE", "Used local narration for the complete Short")
+
+    check()
+    recordings = iter(files)
+    for scene in plan["timeline"]:
+        scene["narration"] = [{"text": text, "path": next(recordings).name}
+                              for text in scene["narration"]]
+
+
+async def produce_and_deliver(message, bot, topic, search, ask, stopped, log):
     from telegram.constants import ChatAction
 
     def check():
@@ -1204,15 +1283,7 @@ Write for voice, with no URLs or markdown in narration.
         with TemporaryDirectory(prefix="smart-video-") as folder:
             root = Path(folder)
             step = "narration"
-            for scene_number, scene in enumerate(plan["timeline"], 1):
-                for index, text in enumerate(scene["narration"]):
-                    check()
-                    path = root / f"voice_{scene_number}_{index}.mp3"
-                    await asyncio.wait_for(
-                        edge_tts.Communicate(text, "en-US-ChristopherNeural").save(str(path)),
-                        timeout=45,
-                    )
-                    scene["narration"][index] = {"text": text, "path": path.name}
+            await prepare_video_narration(plan, root, check, log)
             check()
             storyboard = root / "storyboard.json"
             storyboard.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")

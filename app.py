@@ -1,5 +1,5 @@
 """
-SMART PRIME v3.0 — MODULE 5: THE HANDS (Render edition)
+SMART PRIME v3.2 — MODULE 5: THE HANDS (Render edition)
 Constitutional agent of Juan Ricci (@smartcash22). Fully autonomous campaign operator.
 NEW: web search (eyes), news watcher, Telegram file inbox, TTS voice (edge-tts),
 video render workshop (ffmpeg via imageio-ffmpeg), dashboard downloads.
@@ -106,12 +106,12 @@ async def cmd_start(u, c):
     if str(cid) == JUAN_CHAT_ID:
         if str(owner_id()) != str(cid):
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner auto-registered {cid}")
-        await u.message.reply_text("Smart Prime v3.0 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
+        await u.message.reply_text("Smart Prime v3.2 online. Hands + eyes connected.\n" + goal_status() + "\nCommands: /status /goal /research /voice /render /inbox /report")
         return
     if owner_id() is None:
         if arg and arg == BOOT:
             set_setting("owner_chat_id", cid); log_action("SECURITY", f"Owner registered {cid}")
-            await u.message.reply_text(f"Smart Prime v3.0 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
+            await u.message.reply_text(f"Smart Prime v3.2 online. Hands: connected. Eyes: connected.\nYPP deadline: {(DEADLINE-date.today()).days} days.\nCommands: /status /goal /research /voice /render /report /remember")
         else:
             await u.message.reply_text("Registration requires a code. Reply /start <code> (code is in Render logs: OWNER BOOT CODE).")
         return
@@ -125,7 +125,7 @@ async def cmd_status(u, c):
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v3.0\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v3.2\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -196,6 +196,8 @@ async def cmd_voice(u, c):
         p = f"{RENDER_DIR}/voice_{datetime.now().strftime('%H%M%S')}_{i}.mp3"
         await edge_tts.Communicate(ch, "en-US-ChristopherNeural").save(p)
         await c.bot.send_audio(chat_id=u.effective_chat.id, audio=open(p, "rb"), title=f"FIRST STAGE narration {i+1}")
+    with open(os.path.join(INBOX, f"script_{datetime.now().strftime('%H%M%S')}.txt"), "w") as sf:
+        sf.write(" ".join(chunks))
     log_action("VOICE", f"{len(chunks)} chunk(s) voiced")
 
 async def cmd_render(u, c):
@@ -466,6 +468,92 @@ async def _auto_fetch_recap(href, context):
     except Exception as e:
         log_action("ERROR", "auto_fetch " + str(e)[:100])
 
+
+# ============ MODULE 8: THE DIRECTOR (self-serve video creation) ============
+async def cmd_make_video(u, c):
+    """Full auto-pipeline: newest narration MP3 + newest script + inbox clips -> finished video."""
+    if not is_owner(u): return
+    t = u.message.text.partition(" ")[2].strip()
+    title = t or "FIRST STAGE video"
+    vids = sorted((f for f in os.listdir(INBOX) if f.lower().endswith((".mp4", ".mov"))),
+                  key=lambda f: os.path.getmtime(os.path.join(INBOX, f)))
+    narr = None; script = None
+    for f in sorted(os.listdir(INBOX), key=lambda x: os.path.getmtime(os.path.join(INBOX, x)), reverse=True):
+        fl = f.lower()
+        if narr is None and fl.endswith((".mp3", ".m4a", ".wav")):
+            narr = os.path.join(INBOX, f)
+        if script is None and fl.endswith(".txt"):
+            script = open(os.path.join(INBOX, f)).read().strip()
+    if not narr or not vids:
+        await u.message.reply_text("Need in inbox: 1 narration MP3 (use /voice first) + 2 or more clips."); return
+    if not script:
+        script = title
+    await c.bot.send_chat_action(chat_id=u.effective_chat.id, action=ChatAction.RECORD_VIDEO)
+    import imageio_ffmpeg, re as _re
+    FF = imageio_ffmpeg.get_ffmpeg_exe()
+    def _d(p):
+        r = subprocess.run([FF, "-i", p], capture_output=True, text=True)
+        m = _re.search(r"Duration: (\d+):(\d+):([\d.]+)", r.stderr)
+        return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    aud = _d(narr)
+    sents = [s.strip() for s in _re.split(r"(?<=[.!?]) ", script) if s.strip()][:12]
+    W = [len(s.split()) for s in sents]; WT = max(sum(W), 1)
+    times = []; tt = 0.0
+    for w in W:
+        d = aud * w / WT; times.append((tt, min(tt + d - 0.02, aud))); tt += d
+    clip_paths = [os.path.join(INBOX, v) for v in vids]
+    cd = [_d(p) for p in clip_paths]
+    def escx(s): return s.replace("\\", "\\\\").replace(":", "\\:").replace(",", "\\,")
+    FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    segs = []; i = 0; made_card = 0
+    for si, (a, b) in enumerate(times):
+        dur = max(b - a, 1.5)
+        s = sents[si]
+        is_card = any(ch.isdigit() for ch in s) and made_card < 4 and si > 0
+        if is_card:
+            made_card += 1
+            words = s.split()
+            l1 = " ".join(words[:6]); l2 = " ".join(words[6:14]) or "FIRST STAGE"
+            segs.append(("card", l1[:44], l2[:52], dur))
+        else:
+            k = i % len(clip_paths); i += 1
+            segs.append(("clip", k, min(dur, cd[k]), escx(s[:44]) if si == 0 else None))
+            if si == 0: segs[0] = ("clip", k, min(dur, cd[k]), sents[0][:40])
+    segs.append(("card", "FIRST STAGE", "Data over hype", 2.5))
+    cmd = [FF, "-y", "-v", "error"]
+    used = sorted(set(s[1] for s in segs if s[0] == "clip"))
+    for k in used: cmd += ["-i", clip_paths[k]]
+    cmd += ["-i", narr]
+    parts = []; labels = []; idx = 0
+    for s in segs:
+        if s[0] == "clip":
+            _, k, dur, hook = s; ci = used.index(k)
+            chain = f"[{ci}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p,trim=duration={dur},setpts=PTS-STARTPTS"
+            chain += f",drawtext=fontfile={FONT}:text='FOOTAGE: SPACEX':fontcolor=white:fontsize=26:x=(w-text_w)/2:y=h*0.955:box=1:boxcolor=black@0.55:boxborderw=10"
+            if hook:
+                h1 = escx(hook[:26]); h2 = escx(hook[26:52] or title[:26])
+                chain += f",drawtext=fontfile={FONT}:text='{h1}':fontcolor=white:fontsize=56:x=(w-text_w)/2:y=h*0.12:box=1:boxcolor=black@0.5:boxborderw=22:enable='lt(t,3.4)'"
+                chain += f",drawtext=fontfile={FONT}:text='{h2}':fontcolor=yellow:fontsize=56:x=(w-text_w)/2:y=h*0.20:box=1:boxcolor=black@0.5:boxborderw=22:enable='lt(t,3.4)'"
+            parts.append(chain + f"[s{idx}]")
+        else:
+            _, l1, l2, dur = s
+            parts.append(f"color=c=black:s=1080:1920:r=30:d={dur}[cb{idx}]")
+            parts.append(f"[cb{idx}]drawtext=fontfile={FONT}:text='{escx(l1)}':fontcolor=yellow:fontsize=58:x=(w-text_w)/2:y=h*0.36:box=1:boxcolor=black@0.6:boxborderw=22,drawtext=fontfile={FONT}:text='{escx(l2)}':fontcolor=white:fontsize=44:x=(w-text_w)/2:y=h*0.53:box=1:boxcolor=black@0.6:boxborderw=20,format=yuv420p[s{idx}]")
+        labels.append(f"[s{idx}]"); idx += 1
+    parts.append("".join(labels) + f"concat=n={len(segs)}:v=1:a=0[v]")
+    open("/tmp/director.txt", "w").write(";\n".join(parts))
+    out = f"{RENDER_DIR}/auto_{datetime.now().strftime('%Y%m%d_%H%M')}.mp4"
+    r = subprocess.run(cmd + ["-filter_complex_script", "/tmp/director.txt", "-map", "[v]", "-map", f"{len(used)}:a",
+        "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+        "-maxrate", "5M", "-bufsize", "10M", "-c:a", "aac", "-b:a", "160k", "-t", str(round(aud, 1)), out],
+        capture_output=True, text=True)
+    if r.returncode == 0:
+        log_action("DIRECTOR", f"built {out}")
+        await u.message.reply_text(f"VIDEO BUILT: {os.path.basename(out)}\nDownload: https://smart-prime.onrender.com/dl/{os.path.basename(out)}")
+    else:
+        log_action("ERROR", "director " + str(r.stderr)[-100:])
+        await u.message.reply_text("Build failed: " + str(r.stderr)[-250:])
+
 async def cmd_connect_youtube(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
         set_setting("owner_chat_id", u.effective_chat.id)
@@ -635,6 +723,7 @@ app.add_handler(CommandHandler("yt_export", cmd_yt_export))
 app.add_handler(CommandHandler("fetch", cmd_fetch))
 app.add_handler(CommandHandler("staging", cmd_staging))
 app.add_handler(CommandHandler("clear_staging", cmd_clear_staging))
+app.add_handler(CommandHandler("make_video", cmd_make_video))
 app.add_handler(CommandHandler("yt_metrics", cmd_yt_metrics))
 app.add_handler(CommandHandler("connect_reddit", cmd_connect_reddit))
 app.add_handler(CommandHandler("reddit_scan", cmd_reddit_scan))
@@ -654,7 +743,7 @@ def dashboard():
     crash_txt = ""
     if os.path.exists("bot_crash.log"):
         crash_txt = "\n\n## BOT CRASH LOG\n```\n" + open("bot_crash.log").read()[-1200:] + "\n```"
-    return f"""# SMART PRIME v3.0 — THE HANDS
+    return f"""# SMART PRIME v3.2 — THE HANDS
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'} | **YT:** {'connected' if get_setting('yt_token') else '-'} | **Reddit:** {'connected' if get_setting('reddit_id') else '-'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}

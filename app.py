@@ -972,7 +972,8 @@ def end_time(scene, prior_end, parts):
     raise ValueError("Silent scenes need duration_seconds or sequence start/end times.")
 
 def render_scene(scene, number, sequence, frames, scratch, root):
-    if scene.get("path"):
+    generated_card = not scene.get("path")
+    if not generated_card:
         source = asset(root, scene["path"], STILL_TYPES | CLIP_TYPES)
     else:
         source = scratch / f"card_{number:03}.png"
@@ -984,7 +985,13 @@ def render_scene(scene, number, sequence, frames, scratch, root):
         raise ValueError("source_in must be zero for stills and nonnegative for video.")
     fit = (f"scale={sequence.width}:{sequence.height}:force_original_aspect_ratio=decrease:"
            f"force_divisible_by=2,pad={sequence.width}:{sequence.height}:(ow-iw)/2:(oh-ih)/2")
-    if still:
+    if generated_card:
+        # Reuse one already-sized card frame on the small Render instance.
+        fps = sequence.fps
+        filters = (f"format=yuv420p,loop=loop=-1:size=1:start=0,"
+                   f"setpts=N*{fps.denominator}/({fps.numerator}*TB),"
+                   f"fps={sequence.ffmpeg_rate},setsar=1")
+    elif still:
         # The small push-in retains the card safe area and gives stills motion.
         zoom = (f"zoompan=z='1+0.028*on/{frames}':x='iw/2-iw/zoom/2':"
                 f"y='ih/2-ih/zoom/2':d={frames}:s={sequence.width}x{sequence.height}:"
@@ -994,9 +1001,10 @@ def render_scene(scene, number, sequence, frames, scratch, root):
         filters = (f"trim=start={float(source_in):.8f},setpts=PTS-STARTPTS,"
                    f"fps={sequence.ffmpeg_rate},{fit},setsar=1")
     target = scratch / f"scene_{number:03}.mp4"
+    preset = "ultrafast" if generated_card else "veryfast"
     ffmpeg("-protocol_whitelist", "file,pipe", "-i", str(source), "-map", "0:v:0",
            "-an", "-sn", "-dn", "-filter_threads", "2", "-vf", filters, "-frames:v", str(frames),
-           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+           "-c:v", "libx264", "-preset", preset, "-crf", "20", "-pix_fmt", "yuv420p",
            "-maxrate", "3M", "-bufsize", "6M", "-threads", "2", str(target))
     return target
 
@@ -1352,11 +1360,13 @@ Write for voice, with no URLs or markdown in narration.
             if not receipt["fits_standard_telegram_upload"]:
                 raise RuntimeError("Render exceeds Telegram upload size")
 
+            logging.info("Topic video rendered (%.1fs, %d bytes)", receipt["duration_seconds"], receipt["bytes"])
             step = "video delivery"
             result = Path(receipt["result_directory"])
             with (result / receipt["video"]).open("rb") as video:
                 await bot.send_video(chat_id=message.chat_id, video=video, filename="FIRST_STAGE.mp4",
-                                     caption=plan["title"], supports_streaming=True, write_timeout=180)
+                                     caption=plan["title"], supports_streaming=True,
+                                     read_timeout=180, write_timeout=180)
             log("DIRECTOR", f"Topic video delivered ({receipt['duration_seconds']:.1f}s)")
             check()
             step = "captions delivery"
@@ -1370,7 +1380,10 @@ Write for voice, with no URLs or markdown in narration.
     except VideoStopped:
         log("DIRECTOR", "Topic video stopped by owner")
     except Exception as error:
-        logging.getLogger(__name__).warning("Topic video failed at %s (%s)", step, type(error).__name__)
+        logging.getLogger(__name__).warning(
+            "Topic video failed at %s (%s); cause: %s", step, type(error).__name__,
+            type(error.__cause__).__name__ if error.__cause__ else "none",
+        )
         log("ERROR", f"Topic video failed at {step} ({type(error).__name__})")
         if not stopped():
             await message.reply_text(f"Video job stopped at {step}. Check the service logs and try /video again.")

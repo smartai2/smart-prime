@@ -1119,6 +1119,41 @@ from tempfile import TemporaryDirectory
 
 from urllib.parse import urlsplit
 
+import secrets
+import shutil
+import time
+
+SHORT_EXPORT_ROOT = Path(RENDER_DIR).with_name("short-exports")
+SHORT_DOWNLOAD_TTL = 24 * 60 * 60
+SHORT_DOWNLOAD_TYPES = {"FIRST_STAGE.mp4": "video/mp4", "FIRST_STAGE.srt": "application/x-subrip"}
+
+
+def is_short_handle(handle):
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{32}", handle))
+
+
+def save_short_downloads(result, receipt):
+    """Keep the finished files available after the render job's temp dir closes."""
+    SHORT_EXPORT_ROOT.mkdir(mode=0o700, exist_ok=True)
+    now = time.time()
+    for entry in SHORT_EXPORT_ROOT.iterdir():
+        if is_short_handle(entry.name) and entry.is_dir() and now - entry.stat().st_mtime >= SHORT_DOWNLOAD_TTL:
+            shutil.rmtree(entry, ignore_errors=True)
+    handle = secrets.token_urlsafe(24)
+    with TemporaryDirectory(prefix="staging-", dir=SHORT_EXPORT_ROOT) as folder:
+        staging = Path(folder) / "export"
+        staging.mkdir(mode=0o700)
+        shutil.copyfile(result / receipt["video"], staging / "FIRST_STAGE.mp4")
+        if receipt.get("captions"):
+            shutil.copyfile(result / receipt["captions"], staging / "FIRST_STAGE.srt")
+        staging.rename(SHORT_EXPORT_ROOT / handle)
+    return f"https://smart-prime.onrender.com/short-download/{handle}"
+
+
+class ShortDownloadAccessFilter(logging.Filter):
+    def filter(self, record):
+        return "/short-download/" not in record.getMessage()
+
 class VideoStopped(Exception):
     pass
 
@@ -1357,26 +1392,23 @@ Write for voice, with no URLs or markdown in narration.
             check()
             receipt = await asyncio.to_thread(render, storyboard, root / "result")
             check()
-            if not receipt["fits_standard_telegram_upload"]:
-                raise RuntimeError("Render exceeds Telegram upload size")
 
             logging.info("Topic video rendered (%.1fs, %d bytes)", receipt["duration_seconds"], receipt["bytes"])
             step = "video delivery"
             result = Path(receipt["result_directory"])
-            with (result / receipt["video"]).open("rb") as video:
-                await bot.send_video(chat_id=message.chat_id, video=video, filename="FIRST_STAGE.mp4",
-                                     caption=plan["title"], supports_streaming=True,
-                                     read_timeout=180, write_timeout=180)
-            log("DIRECTOR", f"Topic video delivered ({receipt['duration_seconds']:.1f}s)")
+            download = await asyncio.to_thread(save_short_downloads, result, receipt)
             check()
-            step = "captions delivery"
-            with (result / receipt["captions"]).open("rb") as captions:
-                await bot.send_document(chat_id=message.chat_id, document=captions,
-                                        filename="FIRST_STAGE.srt")
-            check()
-            step = "sources delivery"
+            links = [f"MP4  {download}/FIRST_STAGE.mp4"]
+            if receipt.get("captions"):
+                links.append(f"Captions  {download}/FIRST_STAGE.srt")
             references = "\n".join(source["url"][:500] for source in plan["sources"])
-            await message.reply_text("Research references\n" + references, disable_web_page_preview=True)
+            await message.reply_text(
+                f"Your Short is ready: {plan['title']}\n\n" + "\n".join(links) +
+                "\n\nThe download links are available for up to 24 hours.\n\nResearch references\n" + references,
+                disable_web_page_preview=True,
+            )
+            log("DIRECTOR", f"Topic video download delivered ({receipt['duration_seconds']:.1f}s)")
+            logging.info("Topic video download delivered (%.1fs)", receipt["duration_seconds"])
     except VideoStopped:
         log("DIRECTOR", "Topic video stopped by owner")
     except Exception as error:
@@ -1476,6 +1508,22 @@ def dl(fname: str):
     safe = os.path.basename(fname); p = os.path.join(RENDER_DIR, safe)
     if os.path.exists(p): return FileResponse(p, media_type="application/octet-stream", filename=safe)
     return JSONResponse({"error": "not found"}, status_code=404)
+
+@api.get("/short-download/{handle}/{filename}")
+def short_download(handle: str, filename: str):
+    media_type = SHORT_DOWNLOAD_TYPES.get(filename)
+    if media_type and is_short_handle(handle):
+        folder = SHORT_EXPORT_ROOT / handle
+        path = folder / filename
+        try:
+            if path.is_file() and time.time() - folder.stat().st_mtime < SHORT_DOWNLOAD_TTL:
+                return FileResponse(path, media_type=media_type, filename=filename,
+                                    content_disposition_type="inline" if filename.endswith(".mp4") else "attachment",
+                                    headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"})
+        except FileNotFoundError:
+            pass
+    return JSONResponse({"error": "not found"}, status_code=404)
+
 demo = gr.Interface(fn=dashboard, inputs=None, outputs="markdown", title="Smart Prime")
 try:
     demo.load(fn=dashboard, inputs=None, outputs=demo.output_components)
@@ -1496,5 +1544,6 @@ def _run_bot():
             f.write(err)
 threading.Thread(target=_run_bot, daemon=True).start()
 import uvicorn
+logging.getLogger("uvicorn.access").addFilter(ShortDownloadAccessFilter())
 print(f">>> YPP DEADLINE ARMED: {(DEADLINE - date.today()).days} days")
 uvicorn.run(server, host="0.0.0.0", port=PORT)

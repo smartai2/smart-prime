@@ -80,7 +80,7 @@ def web_search(q, n=5):
     except Exception as e:
         log_action("SEARCH", f"fail {q[:40]}: {str(e)[:60]}"); return []
 
-async def brain_ask(user_text, extra="", models=None):
+async def brain_ask(user_text, extra="", models=None, *, json_mode=False, max_tokens=2000):
     if not brain: return None, "no BRAIN_API_KEY"
     mem = _db.execute("SELECT kind,content,verification FROM memory ORDER BY id DESC LIMIT 12").fetchall()
     memory_txt = "\n".join(f"- [{m[2]}] {m[0]}: {m[1]}" for m in mem)
@@ -90,12 +90,19 @@ Telegram video tools: /video <topic> creates a narrated Short with original grap
 {extra}
 Memory:\n{memory_txt}
 Style: direct, concise, under 150 words unless asked. Call him Juan or boss."""
+    options = {}
+    if json_mode:
+        options = {"response_format": {"type": "json_object"},
+                   "extra_body": {"provider": {"require_parameters": True}}}
     for model in (models or BRAIN_MODELS):
         try:
-            r = await brain.chat.completions.create(model=model, messages=[{"role":"system","content":system},{"role":"user","content":user_text}], max_tokens=2000)
+            r = await brain.chat.completions.create(model=model, messages=[{"role":"system","content":system},{"role":"user","content":user_text}], max_tokens=max_tokens, **options)
             if getattr(r, "choices", None):
                 txt = (r.choices[0].message.content or "").strip()
                 if txt: return txt, model
+            if models == ("openrouter/free",):
+                finish = r.choices[0].finish_reason if getattr(r, "choices", None) else "no choices"
+                logging.info("Video model returned no story text (finish: %s)", finish)
         except Exception as e:
             log_action("BRAIN", f"{model} failed: {str(e)[:80]}"); continue
     return None, "all brain models unavailable"
@@ -1111,15 +1118,59 @@ def sources_from_search(hits):
     sources = []
     seen = set()
     for hit in hits:
-        url = hit.get("href", "")
-        parsed = urlsplit(url)
+        url = hit.get("href") or ""
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            continue
         if parsed.scheme not in ("https", "http") or not parsed.hostname or url in seen:
             continue
-        snippet = hit.get("body", "").strip()[:500]
+        snippet = (hit.get("body") or "").strip()[:500]
         if snippet:
             sources.append({"id": len(sources) + 1, "url": url,
-                            "title": hit.get("title", "")[:120], "snippet": snippet})
+                            "title": (hit.get("title") or "")[:120], "snippet": snippet})
             seen.add(url)
+    return sources
+
+
+def encyclopedia_hits(query):
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+
+    params = {
+        "action": "query", "generator": "search", "gsrsearch": query,
+        "gsrnamespace": "0", "gsrlimit": "4", "prop": "extracts|info",
+        "exintro": "1", "explaintext": "1", "exchars": "500", "inprop": "url",
+        "format": "json", "formatversion": "2",
+    }
+    request = Request("https://en.wikipedia.org/w/api.php?" + urlencode(params), headers={
+        "User-Agent": "SmartPrime/3.2 (FIRST STAGE research; https://github.com/smartai2/smart-prime)"
+    })
+    try:
+        with urlopen(request, timeout=8) as response:
+            pages = json.load(response).get("query", {}).get("pages", [])
+    except (OSError, ValueError) as error:
+        logging.info("Video reference lookup failed (%s)", type(error).__name__)
+        return []
+    return [{"href": page.get("fullurl"), "title": page.get("title"),
+             "body": page.get("extract")} for page in sorted(pages, key=lambda item: item.get("index", 0))]
+
+
+def find_video_sources(topic, search):
+    short_topic = re.sub(r"^(?:why|how|what is|what are|explain|tell me about)\s+", "",
+                         topic, flags=re.I)
+    if short_topic == topic:
+        short_topic = topic + " overview"
+    for query in (topic, short_topic):
+        sources = sources_from_search(search(query, 6))
+        if sources:
+            return sources
+    if re.search(r"\b(?:latest|current|today|yesterday|tomorrow|this week|breaking|recent|upcoming|schedule|date|when)\b",
+                 topic, re.I):
+        return []
+    sources = sources_from_search(encyclopedia_hits(short_topic.removesuffix(" overview")))
+    if sources:
+        logging.info("Video research used encyclopedia background sources")
     return sources
 
 def short_text(obj, name, limit):
@@ -1249,7 +1300,7 @@ async def produce_and_deliver(message, bot, topic, search, ask, stopped, log):
     step = "research"
     try:
         check()
-        sources = sources_from_search(await asyncio.to_thread(search, topic, 6))
+        sources = await asyncio.to_thread(find_video_sources, topic, search)
         check()
         if not sources:
             await message.reply_text("Search returned no usable sources for this topic. Try a narrower topic.")
@@ -1266,19 +1317,25 @@ Keep estimates, tentative timelines, and reports attributed. Avoid unsupported c
 Write for voice, with no URLs or markdown in narration.
 """
         request = prompt + json.dumps({"topic": topic, "search_snippets": sources}, ensure_ascii=False)
-        for attempt in range(2):
+        for json_mode in (True, False, True):
             check()
-            reply, _ = await ask(request)
+            reply, _ = await ask(
+                request, extra="For this request follow the storyboard length and JSON format in the user prompt.",
+                models=("openrouter/free",), json_mode=json_mode, max_tokens=4000,
+            )
             check()
             if not reply:
-                raise RuntimeError("Model unavailable")
+                continue
             try:
                 plan = parse_plan(reply, sources)
                 break
             except (ValueError, KeyError, TypeError) as error:
-                if attempt:
-                    raise
-                request += "\nThe first response failed validation. Return the complete corrected JSON. " + str(error)
+                logging.info("Video storyboard validation failed (%s)", type(error).__name__)
+                request = prompt + json.dumps({"topic": topic, "search_snippets": sources}, ensure_ascii=False)
+                request += "\nThe previous storyboard failed validation. Return complete JSON with all required fields."
+        else:
+            await message.reply_text("The free model route did not return a usable storyboard after retrying.")
+            return
 
         with TemporaryDirectory(prefix="smart-video-") as folder:
             root = Path(folder)

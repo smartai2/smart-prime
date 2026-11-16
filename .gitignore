@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.studio-cache/
+*.db
+*.log
+inbox/
+renders/
+staging/
+short-exports/
+qa/
+integration.txt
+qa_demo.py

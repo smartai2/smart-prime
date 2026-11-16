@@ -1,5 +1,4 @@
 python-telegram-bot[job-queue]>=21,<22
-gradio>=4.0
 openai>=1.0
 ddgs
 edge-tts
@@ -11,3 +10,7 @@ google-auth-oauthlib
 praw
 yt-dlp
 espeakng-loader==0.2.4
+piper-tts==1.4.1
+beautifulsoup4>=4.12,<5
+Pillow>=10,<13
+

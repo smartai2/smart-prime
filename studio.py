@@ -55,6 +55,18 @@ class Cancelled(StudioError):
     pass
 
 
+def release_memory():
+    """Return freed image/ONNX buffers to Linux before the next heavy stage."""
+    import gc
+    gc.collect()
+    if sys.platform.startswith('linux'):
+        import ctypes
+        try:
+            ctypes.CDLL(None).malloc_trim(0)
+        except (AttributeError,OSError):
+            pass
+
+
 def check(stopped=lambda: False):
     if stopped():
         raise Cancelled("Video cancelled. No video was published.")
@@ -134,7 +146,15 @@ def api_json(url, stopped=lambda: False):
     return json.loads(download(url, stopped=stopped))
 
 
-def command(args, *, stopped=lambda: False, timeout=600, cwd=None):
+def resident_mib(pid):
+    try:
+        match=re.search(r'^VmRSS:\s+(\d+)\s+kB',Path(f'/proc/{pid}/status').read_text(),re.M)
+        return int(match[1])/1024 if match else 0
+    except OSError:
+        return 0
+
+
+def command(args, *, stopped=lambda: False, timeout=600, cwd=None, memory_budget_mb=None):
     """Drain output to disk, so a full stderr pipe cannot deadlock cancellation."""
     check(stopped)
     with tempfile.TemporaryFile() as output:
@@ -146,6 +166,8 @@ def command(args, *, stopped=lambda: False, timeout=600, cwd=None):
                 check(stopped)
                 if time.monotonic() - start > timeout:
                     raise StudioError("Production step exceeded its time limit.")
+                if memory_budget_mb and resident_mib(os.getpid())+resident_mib(process.pid)>memory_budget_mb:
+                    raise StudioError('Narration reached the memory budget and was stopped to protect the bot. No incomplete video was delivered.')
                 time.sleep(0.15)
             output.seek(0)
             result = output.read().decode("utf-8", "replace")
@@ -310,6 +332,19 @@ def field(obj, key, limit):
     return " ".join(text.split())
 
 
+def spoken_chunks(text):
+    """Keep neural synthesis memory bounded without dropping or adding words."""
+    words=text.split()
+    if len(words)<=10 and len(text)<=80:
+        return [text]
+    if len(words)<2:
+        raise ValueError('Use ordinary spoken words, not long identifiers.')
+    middle=len(words)//2
+    punctuation=[i for i in range(3,len(words)-2) if words[i-1][-1:] in ',;:!?']
+    cut=min(punctuation,key=lambda i:abs(i-middle)) if punctuation else middle
+    return spoken_chunks(' '.join(words[:cut]))+spoken_chunks(' '.join(words[cut:]))
+
+
 def validate_script(raw, sources):
     plan = json_object(raw) if isinstance(raw, str) else raw
     title = field(plan, "title", 85)
@@ -337,7 +372,7 @@ def validate_script(raw, sources):
             if type(sid) is not int or sid not in evidence or len(excerpt) < 20 or clean(excerpt).lower() not in evidence[sid]:
                 raise ValueError("Evidence quote does not occur in the supplied source.")
         normalized.append({"heading": heading, "visual_query": query,
-                           "narration": phrases, "evidence": refs})
+                           "narration": [chunk for p in phrases for chunk in spoken_chunks(p)], "evidence": refs})
     if not 80 <= words <= 145:
         raise ValueError("Use 80 to 145 narration words.")
     return {"title": title, "scenes": normalized, "word_count": words}
@@ -349,7 +384,7 @@ Format: {"title":"...", "scenes":[{"heading":"...", "visual_query":"Starship lau
 "narration":["A complete, natural spoken phrase.","Another phrase."],
 "evidence":[{"source_id":1,"quote":"exact supporting excerpt from the supplied source"}]}]}.
 Use 4-6 scenes, 80-145 narration words total. Each scene has 1-3 spoken phrases,
-each <=22 words and <=150 characters. Headings <=48 characters, title <=85.
+each <=10 words and <=80 characters. Headings <=48 characters, title <=85.
 Start with an intriguing specific question or consequence in the first sentence.
 Develop ONE clear explanation with cause/effect and finish on a meaningful takeaway.
 No generic welcome, hype, clickbait, stock call to subscribe, or invented numbers.
@@ -681,6 +716,13 @@ def voice_worker(request_file):
     import onnxruntime as ort
     from piper import PiperVoice, SynthesisConfig
     from piper.config import PiperConfig
+    # If the host ever exhausts memory, prefer stopping this expendable worker
+    # over killing the owner bot and losing the entire server's state.
+    if sys.platform.startswith('linux'):
+        try:
+            Path('/proc/self/oom_score_adj').write_text('1000')
+        except OSError:
+            pass
     job = json.loads(Path(request_file).read_text())
     model = Path(job["model"])
     options = ort.SessionOptions()
@@ -692,12 +734,14 @@ def voice_worker(request_file):
     voice = PiperVoice(config=PiperConfig.from_dict(json.loads(Path(str(model) + ".json").read_text())),
                        session=ort.InferenceSession(str(model), sess_options=options, providers=["CPUExecutionProvider"]))
     settings = SynthesisConfig(length_scale=1.03, noise_scale=0.55, noise_w_scale=0.7)
+    release_memory()
     for item in job["phrases"]:
         # Pronunciation fixes preserve the visible spelling in captions.
         spoken = re.sub(r"\bSpaceX\b", "Space X", item["text"])
         spoken = re.sub(r"\bRaptor\b", "Raptor", spoken)
         with wave.open(item["output"], "wb") as audio:
             voice.synthesize_wav(spoken, audio, syn_config=settings)
+        release_memory()
 
 
 def narration(plan, root, stopped=lambda: False):
@@ -709,7 +753,7 @@ def narration(plan, root, stopped=lambda: False):
     request = root / "voice_job.json"
     request.write_text(json.dumps({"model": str(model.resolve()), "phrases": items}))
     command([sys.executable, Path(__file__).resolve(), "--voice-worker", request.resolve()],
-            stopped=stopped, timeout=360)
+            stopped=stopped, timeout=360, memory_budget_mb=450)
     for item in items:
         with wave.open(item["output"], "rb") as audio:
             duration = audio.getnframes() / audio.getframerate()
@@ -936,6 +980,7 @@ async def produce(topic, search, ask, root, status, stopped=lambda: False):
     status("Inspecting footage and selecting shots")
     await visual_edit(plan,media,root,ask,stopped)
     status("Recording the neural narrator")
+    await asyncio.to_thread(release_memory)
     voices = await asyncio.to_thread(narration,plan,root,stopped)
     status("Editing the video")
     result, report = await asyncio.to_thread(render_edit,plan,media,voices,root,stopped,status)

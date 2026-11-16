@@ -33,6 +33,13 @@ def test_review_wrapping_is_tolerated_but_conflicting_answers_are_not():
             studio.json_object(ambiguous)
 
 
+def test_spoken_chunks_preserve_every_word_with_bounded_synthesis_size():
+    phrase='The spacecraft separates from the booster, then continues toward orbit while the first stage follows its own return path.'
+    chunks=studio.spoken_chunks(phrase)
+    assert ' '.join(chunks)==phrase
+    assert all(len(c.split())<=10 and len(c)<=80 for c in chunks)
+
+
 def test_malformed_review_is_retried_without_skipping_editorial_check():
     answers=iter([json.dumps(sample_plan()),'The response was interrupted.',
                   'Review result: {"approved":true,"issues":[]}'])
@@ -99,6 +106,16 @@ def test_cancellation_terminates_child():
     with pytest.raises(studio.Cancelled):
         studio.command([sys.executable,'-c','import time; time.sleep(60)'],stopped=stop.is_set)
     timer.join()
+    assert time.monotonic()-start<3
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'),reason='Linux memory accounting')
+def test_memory_budget_stops_an_oversized_worker():
+    import os
+    budget=studio.resident_mib(os.getpid())+45
+    start=time.monotonic()
+    with pytest.raises(studio.StudioError,match='memory budget'):
+        studio.command([sys.executable,'-c','import time; payload=bytearray(90*1024*1024); time.sleep(10)'],memory_budget_mb=budget)
     assert time.monotonic()-start<3
 
 

@@ -58,6 +58,9 @@ No additional paid service or storage subscription is enabled by this release.
   without returning a script. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.
 - Piper runs in a short-lived process, releasing model memory before video encoding.
+  Spoken chunks are limited to 10 words/80 characters; freed image and narrator
+  buffers are returned to Linux between stages/chunks to protect the free instance.
+  A combined 450 MB resident-memory guard stops narration before exhausting the host.
   FFmpeg and ONNX use a single thread. The heavyweight Gradio dashboard was replaced
   by a small FastAPI page to leave memory available on the existing free instance.
 - `/health` reports Studio version and whether Telegram polling is running.

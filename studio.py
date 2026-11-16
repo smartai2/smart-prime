@@ -1,7 +1,7 @@
 """FIRST STAGE Studio: grounded scripts, licensed media, neural voice, finished edits.
 
 No credentials, paid providers, bot startup or publishing side effects on import.
-The host supplies search/LLM callbacks. Each blocking stage is bounded/cancellable.
+The host supplies the LLM callback. Each blocking stage is bounded/cancellable.
 """
 from __future__ import annotations
 
@@ -14,9 +14,11 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
 import zipfile
@@ -154,12 +156,26 @@ def resident_mib(pid):
         return 0
 
 
+_HEAVY_PROCESS_LOCK=threading.Lock()
+
+
 def command(args, *, stopped=lambda: False, timeout=600, cwd=None, memory_budget_mb=None):
+    # News/search jobs and narration must not compete for the same 512 MB host.
+    while not _HEAVY_PROCESS_LOCK.acquire(timeout=.15):
+        check(stopped)
+    try:
+        return _command(args,stopped=stopped,timeout=timeout,cwd=cwd,memory_budget_mb=memory_budget_mb)
+    finally:
+        _HEAVY_PROCESS_LOCK.release()
+
+
+def _command(args, *, stopped=lambda: False, timeout=600, cwd=None, memory_budget_mb=None):
     """Drain output to disk, so a full stderr pipe cannot deadlock cancellation."""
     check(stopped)
     with tempfile.TemporaryFile() as output:
+        own_group=os.name=='posix' and '--phase-worker' not in sys.argv
         process = subprocess.Popen([str(a) for a in args], cwd=cwd,
-                                   stdout=output, stderr=subprocess.STDOUT)
+                                   stdout=output, stderr=subprocess.STDOUT,start_new_session=own_group)
         start = time.monotonic()
         try:
             while process.poll() is None:
@@ -167,6 +183,7 @@ def command(args, *, stopped=lambda: False, timeout=600, cwd=None, memory_budget
                 if time.monotonic() - start > timeout:
                     raise StudioError("Production step exceeded its time limit.")
                 if memory_budget_mb and resident_mib(os.getpid())+resident_mib(process.pid)>memory_budget_mb:
+                    logging.warning('Studio memory guard: parent %.1f MB; worker %.1f MB',resident_mib(os.getpid()),resident_mib(process.pid))
                     raise StudioError('Narration reached the memory budget and was stopped to protect the bot. No incomplete video was delivered.')
                 time.sleep(0.15)
             output.seek(0)
@@ -179,11 +196,13 @@ def command(args, *, stopped=lambda: False, timeout=600, cwd=None, memory_budget
             return result
         finally:
             if process.poll() is None:
-                process.terminate()
+                if own_group: os.killpg(process.pid,signal.SIGTERM)
+                else: process.terminate()
                 try:
                     process.wait(timeout=3)
                 except subprocess.TimeoutExpired:
-                    process.kill()
+                    if own_group: os.killpg(process.pid,signal.SIGKILL)
+                    else: process.kill()
                     process.wait()
 
 
@@ -721,7 +740,11 @@ def validate_shot_sequence(answer, phrases, candidates, assets, allowed):
 
 
 async def visual_edit(plan, assets, root, ask, stopped=lambda: False):
-    sheet,candidates=await asyncio.to_thread(contact_sheet,assets,root,stopped)
+    scouting=root/'scouting.json'
+    if scouting.exists():
+        sheet,candidates=root/'shot_contact_sheet.jpg',json.loads(scouting.read_text())
+    else:
+        sheet,candidates=await asyncio.to_thread(contact_sheet,assets,root,stopped)
     phrases=[{'heading':s['heading'],'narration':p} for s in plan['scenes'] for p in s['narration']]
     screen='''Inspect every media source in the numbered contact sheet. Classify the ORIGINAL
 visual, not the file extension. Is it real photographic footage/photo, an illustration/render,
@@ -1059,17 +1082,53 @@ def package(result, plan, sources, assets, report):
                 z.write(path,path.name)
 
 
+def phase_worker(request_file):
+    job=json.loads(Path(request_file).read_text())
+    root=Path(job['root'])
+    try:
+        if job['phase'] in ('research','search'):
+            def search(query,n):
+                from ddgs import DDGS
+                with DDGS(timeout=12) as engine:
+                    return list(engine.text(query,max_results=n))
+            result=(search(job['topic'],job['plan'].get('limit',5)) if job['phase']=='search'
+                    else research(job['topic'],search))
+        elif job['phase']=='media':
+            assets=acquire_media(job['topic'],job['plan'],root)
+            _,candidates=contact_sheet(assets,root)
+            (root/'scouting.json').write_text(json.dumps(candidates))
+            result=[asdict(m) for m in assets]
+        else:
+            raise StudioError('Unknown production phase.')
+        payload={'result':result}
+    except StudioError as error:
+        payload={'error':str(error)}
+    (root/(job['phase']+'_result.json')).write_text(json.dumps(payload))
+
+
+def isolated_phase(phase,topic,plan,root,stopped=lambda:False):
+    root=root.resolve()
+    request=root/(phase+'_job.json')
+    request.write_text(json.dumps({'phase':phase,'topic':topic,'plan':plan,'root':str(root)}))
+    command([sys.executable,Path(__file__).resolve(),'--phase-worker',request],
+            stopped=stopped,timeout={'search':35,'research':240}.get(phase,480))
+    result=json.loads((root/(phase+'_result.json')).read_text())
+    if result.get('error'): raise StudioError(result['error'])
+    return result['result']
+
+
 async def produce(topic, search, ask, root, status, stopped=lambda: False):
     status("Reading and checking sources")
-    sources = await asyncio.to_thread(research,topic,search,stopped)
+    sources = await asyncio.to_thread(isolated_phase,'research',topic,{},root,stopped)
     status("Writing and fact-checking the script")
     plan = await write_script(topic,sources,ask,stopped)
     status("Finding licensed footage and photographs")
-    media = await asyncio.to_thread(acquire_media,topic,plan,root,stopped)
+    media = [Media(**m) for m in await asyncio.to_thread(isolated_phase,'media',topic,plan,root,stopped)]
     status("Inspecting footage and selecting shots")
     await visual_edit(plan,media,root,ask,stopped)
     status("Recording the neural narrator")
     await asyncio.to_thread(release_memory)
+    logging.info('Studio parent memory before narration: %.1f MB',resident_mib(os.getpid()))
     voices = await asyncio.to_thread(narration,plan,root,stopped)
     status("Editing the video")
     result, report = await asyncio.to_thread(render_edit,plan,media,voices,root,stopped,status)
@@ -1081,5 +1140,7 @@ async def produce(topic, search, ask, root, status, stopped=lambda: False):
 if __name__ == "__main__":
     if len(sys.argv)==3 and sys.argv[1]=="--voice-worker":
         voice_worker(sys.argv[2])
+    elif len(sys.argv)==3 and sys.argv[1]=="--phase-worker":
+        phase_worker(sys.argv[2])
     else:
         raise SystemExit("This module is used by Smart Prime, not a second bot process.")

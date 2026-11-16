@@ -152,6 +152,23 @@ def test_cancellation_terminates_child():
     assert time.monotonic()-start<3
 
 
+@pytest.mark.skipif(sys.platform!='linux',reason='Linux process groups')
+def test_cancellation_also_stops_nested_phase_children(tmp_path):
+    marker=tmp_path/'unexpected.txt'
+    child=f"import time; from pathlib import Path; time.sleep(1); Path({str(marker)!r}).write_text('still running')"
+    parent='import subprocess,sys,time; subprocess.Popen([sys.executable,"-c",'+repr(child)+']); time.sleep(60)'
+    stop=threading.Event();timer=threading.Timer(.25,stop.set);timer.start()
+    with pytest.raises(studio.Cancelled):
+        studio.command([sys.executable,'-c',parent],stopped=stop.is_set)
+    timer.join();time.sleep(1)
+    assert not marker.exists()
+
+
+def test_isolated_phase_returns_safe_failure_without_starting_a_bot(tmp_path):
+    with pytest.raises(studio.StudioError,match='Unknown production phase'):
+        studio.isolated_phase('unknown','A topic',{},tmp_path)
+
+
 @pytest.mark.skipif(not sys.platform.startswith('linux'),reason='Linux memory accounting')
 def test_memory_budget_stops_an_oversized_worker():
     import os

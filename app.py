@@ -76,9 +76,8 @@ def goal_status():
 
 def web_search(q, n=5):
     try:
-        from ddgs import DDGS
-        with DDGS(timeout=8) as d:
-            return list(d.text(q, max_results=n))
+        with TemporaryDirectory(prefix='smart-search-') as folder:
+            return studio.isolated_phase('search',q,{'limit':n},Path(folder))
     except Exception as e:
         log_action("SEARCH", f"fail {q[:40]}: {str(e)[:60]}"); return []
 
@@ -180,7 +179,7 @@ async def cmd_research(u, c):
     await c.bot.send_chat_action(chat_id=u.effective_chat.id, action=ChatAction.TYPING)
     hits = []
     for q in [t, t + " latest", t + " 2026"]:
-        hits += web_search(q, 4)
+        hits += await asyncio.to_thread(web_search,q,4)
     ctx = "\n".join(f"- {h.get('title','')}: {h.get('body','')[:200]} [src: {h.get('href','')}]" for h in hits[:12]) or "(search unavailable)"
     ans, model = await brain_ask(f"Research task: {t}\nSearch results:\n{ctx}\nDeliver: key facts with source domain per claim, conflicts flagged, evidence tier per claim, under 250 words.")
     log_action("RESEARCH", f"{t[:50]} via {model}")
@@ -282,9 +281,13 @@ async def on_file(u, c):
         await u.message.reply_text("Download failed. Resend via paperclip > File. Over 20 MB will not work - use the small version of the video.")
 
 async def news_job(c):
+    active=c.application.bot_data.get('topic_video_task')
+    if active and not active.done(): return
     oid = owner_id()
     if not oid or get_setting("frozen") == "1": return
-    hits = web_search("SpaceX Starship news", 6) + web_search("Starship Flight 15", 4)
+    results = await asyncio.gather(asyncio.to_thread(web_search,"SpaceX Starship news",6),
+                                   asyncio.to_thread(web_search,"Starship Flight 15",4))
+    hits = results[0]+results[1]
     if get_setting("yt_token") and not get_setting("f15_recap_fetched"):
         for h in hits:
             href = (h.get("href") or "")
@@ -352,7 +355,7 @@ async def on_message(u, c):
     await c.bot.send_chat_action(chat_id=u.effective_chat.id, action=ChatAction.TYPING)
     extra = ""
     try:
-        hits = web_search(text, 4)
+        hits = await asyncio.to_thread(web_search,text,4)
         if hits:
             ctx = "\n".join(f"- {h.get('title','')}: {h.get('body','')[:160]} [src: {h.get('href','')}]" for h in hits)
             extra = "Live web search results:\n" + ctx + "\nToday's date: " + date.today().isoformat() + ". Prefer these current sources over training data. Cite source domains. If results conflict with training memory, trust the results."

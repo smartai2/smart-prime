@@ -61,6 +61,8 @@ No additional paid service or storage subscription is enabled by this release.
   without returning a script. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.
 - Piper runs in a short-lived process, releasing model memory before video encoding.
+  Research and archive/image preparation also run in separate processes, which exit
+  before narration so search libraries and image buffers do not accumulate in the bot.
   Complete spoken sentences are limited to 10 words/80 characters; freed image and narrator
   buffers are returned to Linux between stages/chunks to protect the free instance.
   A combined 450 MB resident-memory guard stops narration before exhausting the host.

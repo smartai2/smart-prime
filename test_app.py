@@ -78,3 +78,16 @@ def test_model_request_has_total_deadline(bot_app,monkeypatch):
     monkeypatch.setattr(bot_app,'STUDIO_MODEL_DEADLINE',0.02)
     assert asyncio.run(bot_app.studio_ask('Return JSON'))==''
     assert cancelled==[True]
+
+
+def test_studio_model_routes_cannot_fall_back_to_paid_models(bot_app,monkeypatch):
+    calls=[]
+    async def provider(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"approved":true,"issues":[]}'),finish_reason='stop')])
+    fake=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=provider)))
+    monkeypatch.setattr(bot_app,'brain',SimpleNamespace(with_options=lambda **kwargs:fake))
+    for attempt in range(3):
+        assert asyncio.run(bot_app.studio_ask('Return JSON',attempt))
+    assert all(c['model'].endswith(':free') for c in calls)
+    assert all(c['extra_body']['reasoning']['enabled'] is False for c in calls)

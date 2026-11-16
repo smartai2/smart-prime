@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys
 import threading
@@ -22,6 +23,22 @@ def test_script_evidence_quotes_must_exist():
     plan['scenes'][0]['evidence'][0]['quote']='A fabricated quote that never occurred.'
     with pytest.raises(ValueError,match='does not occur'):
         studio.validate_script(plan,sources)
+
+
+def test_review_wrapping_is_tolerated_but_conflicting_answers_are_not():
+    review='Here is the review:\n```json\n{"approved":true,"issues":[]}\n```'
+    assert studio.json_object(review)=={'approved':True,'issues':[]}
+    for ambiguous in ('[{"approved":true}]','{"approved":false} {"approved":true}'):
+        with pytest.raises(ValueError):
+            studio.json_object(ambiguous)
+
+
+def test_malformed_review_is_retried_without_skipping_editorial_check():
+    answers=iter([json.dumps(sample_plan()),'The response was interrupted.',
+                  'Review result: {"approved":true,"issues":[]}'])
+    async def ask(*args):return next(answers)
+    plan=asyncio.run(studio.write_script('How it works',[{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
+    assert 'approved' in plan['editorial_check']
 
 
 @pytest.mark.parametrize('url',[

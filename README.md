@@ -52,7 +52,7 @@ No additional paid service or storage subscription is enabled by this release.
 
 - Python entrypoint: `python app.py`; dependencies: `pip install -r requirements.txt`.
 - Existing `SMART_TOKEN`, `BRAIN_API_KEY`, owner and YouTube settings remain in use.
-- Studio uses verified free Ling Flash and Gemma routes, then `openrouter/free`, including vision. No paid fallback is enabled. Availability/rate limits vary.
+- Studio uses `openrouter/free` for writing and vision, with a 95-second total request deadline. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.
 - Piper runs in a short-lived process, releasing model memory before video encoding.
   FFmpeg and ONNX use a single thread. The heavyweight Gradio dashboard was replaced

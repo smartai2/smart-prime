@@ -772,13 +772,14 @@ STUDIO_MODEL_DEADLINE = 95
 async def studio_ask(prompt, attempt=0, images=None):
     if not brain:
         raise studio.StudioError("The research writer needs BRAIN_API_KEY configured in Render.")
-    options = {"response_format":{"type":"json_object"}} if attempt != 1 else {}
+    options = {"response_format":{"type":"json_object"}}
     content=prompt
     if images:
         import base64
         content=[{"type":"text","text":prompt}]+[{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,"+base64.b64encode(Path(p).read_bytes()).decode()}} for p in images]
-    # Verified free models, followed by the free router. No paid fallback.
-    model=("inclusionai/ling-3.2-flash:free","google/gemma-4-31b-it:free","openrouter/free")[min(attempt,2)]
+    # The router returned usable scripts in the live test; fixed free routes were
+    # stalled/rate-limited. Let it select an available capable provider per call.
+    model="openrouter/free"
     try:
         # HTTP read timeouts reset on provider keepalives. Bound the whole request too.
         response = await asyncio.wait_for(brain.with_options(timeout=85.0,max_retries=0).chat.completions.create(

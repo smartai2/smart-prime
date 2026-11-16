@@ -19,13 +19,16 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
 1. Read source pages; search snippets are discovery hints, not script evidence. Prefer
    primary sources, label reported material, and use encyclopedias only for background.
    Current-news requests need recent, dated reporting. This restriction can stop a job.
-2. Write an original 80–145 word explanation, validate exact supporting quotations,
-   and obtain a second source-based editorial check. This is an AI check, not a guarantee
+2. Write an original 80–145 word explanation in complete short sentences, validate exact
+   supporting quotations, preserve planned-capability wording, and obtain an editorial
+   check from a different model route. This is an AI check, not a guarantee
    of factual correctness. Review the included script and sources before publication.
 3. Find licensed motion footage and photography on Wikimedia Commons or NASA. Reject
    unknown rights, NC/SA licenses, animations masquerading as footage, unrelated bands
    called Starship, and pre-edited comparisons. Require usable resolution and real video.
-4. Sample actual frames. A free vision model selects a shot for each narration phrase.
+4. Sample actual frames from distinct launches. Screen photographs/footage separately
+   from illustrations, then select one shot per sentence. Enforce at least 60% motion
+   coverage by narration words, four distinct shots, and no consecutive repeated shot.
    All archive visuals are labelled; they are never presented as footage of a new event.
 5. Synthesize a consistent US English neural voice locally using Piper John medium.
    The model card lists public-domain LibriVox source recordings. Model download is
@@ -58,7 +61,7 @@ No additional paid service or storage subscription is enabled by this release.
   without returning a script. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.
 - Piper runs in a short-lived process, releasing model memory before video encoding.
-  Spoken chunks are limited to 10 words/80 characters; freed image and narrator
+  Complete spoken sentences are limited to 10 words/80 characters; freed image and narrator
   buffers are returned to Linux between stages/chunks to protect the free instance.
   A combined 450 MB resident-memory guard stops narration before exhausting the host.
   FFmpeg and ONNX use a single thread. The heavyweight Gradio dashboard was replaced

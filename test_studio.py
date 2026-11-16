@@ -10,9 +10,9 @@ import studio
 
 
 def sample_plan():
-    phrase = "This is a source supported explanation of how the launch system works."
+    phrase = "This source explains how the launch system works."
     return {"title":"How the system works", "scenes":[
-        {"heading":"The explanation", "visual_query":"Starship launch", "narration":[phrase,phrase],
+        {"heading":"The explanation", "visual_query":"Starship launch", "narration":[phrase,phrase,phrase],
          "evidence":[{"source_id":1,"quote":"This is the exact source evidence for the explanation."}]} for _ in range(4)]}
 
 
@@ -33,11 +33,33 @@ def test_review_wrapping_is_tolerated_but_conflicting_answers_are_not():
             studio.json_object(ambiguous)
 
 
-def test_spoken_chunks_preserve_every_word_with_bounded_synthesis_size():
-    phrase='The spacecraft separates from the booster, then continues toward orbit while the first stage follows its own return path.'
-    chunks=studio.spoken_chunks(phrase)
-    assert ' '.join(chunks)==phrase
-    assert all(len(c.split())<=10 and len(c)<=80 for c in chunks)
+def test_script_rejects_unfinished_clauses_and_overlong_narration():
+    for phrase in ['The ship is designed to', 'This is an overly long sentence with eleven distinct separate words.']:
+        plan=sample_plan()
+        plan['scenes'][0]['narration'][0]=phrase
+        with pytest.raises(ValueError):
+            studio.validate_script(plan,[{'id':1,'text':'This is the exact source evidence for the explanation.'}])
+
+
+def test_planned_capability_cannot_silently_become_operational():
+    plan=sample_plan()
+    quote='The spacecraft is intended to carry crew and cargo.'
+    plan['scenes'][0]['evidence'][0]['quote']=quote
+    with pytest.raises(ValueError,match='planned capability'):
+        studio.validate_script(plan,[{'id':1,'text':quote+' This is the exact source evidence for the explanation.'}])
+
+
+def test_visual_gate_rejects_repetition_illustrations_and_slideshow():
+    assets=[studio.Media('Launch','','','','','','video'),studio.Media('Photo','','','','','','image')]
+    candidates=[{'id':i,'media_index':0 if i<6 else 1} for i in range(8)]
+    phrases=[{'narration':'A short complete sentence.'} for _ in range(10)]
+    def validate(ids,allowed=range(8)):
+        return studio.validate_shot_sequence({'approved':True,'shots':[{'id':i,'reason':'Visible rocket'} for i in ids]},phrases,candidates,assets,allowed)
+    assert len(validate([0,1,2,6,3,4,5,7,0,1]))==10
+    for ids,allowed in [([0,0,1,2,3,4,5,6,7,0],range(8)),
+                        ([6,7,6,7,6,7,6,7,0,1],range(8)),
+                        ([0,1,2,6,3,4,5,7,0,1],range(7))]:
+        with pytest.raises(ValueError):validate(ids,allowed)
 
 
 def test_malformed_review_is_retried_without_skipping_editorial_check():
@@ -131,7 +153,8 @@ def test_licensing_and_simulation_filter(monkeypatch):
         '4':page(4,'CC0','SpaceX Starship animation.webm'),'5':page(5,'CC BY 4.0'),
         '6':page(6,'CC BY 4.0','Mickey Thomas and Starship band.webm'),
         '7':page(7,'CC0',"Artist Concepts of SpaceX Starship.webm"),
-        '8':page(8,'CC0','SpaceX Starship models.webm')}}})
+        '8':page(8,'CC0','SpaceX Starship models.webm'),
+        '9':page(9,'CC0','Starship could deploy retractable air-breaks.webm')}}})
     found=studio.commons_media('Starship','video')
     assert len(found)==2
     assert {m.license for m in found}=={'CC0','CC BY 4.0'}

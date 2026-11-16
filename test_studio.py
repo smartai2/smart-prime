@@ -70,6 +70,27 @@ def test_malformed_review_is_retried_without_skipping_editorial_check():
     assert 'approved' in plan['editorial_check']
 
 
+def test_evidence_ids_attach_original_text_and_reject_invented_ids():
+    source={'id':1,'text':'The spacecraft is intended to carry crew and cargo. Both stages are still under development.'}
+    catalog=studio.evidence_catalog([source])
+    plan={'scenes':[{'evidence_ids':['1:1']}]}
+    assert studio.resolve_evidence(plan,catalog)['scenes'][0]['evidence'][0]['quote']=='The spacecraft is intended to carry crew and cargo.'
+    with pytest.raises(ValueError,match='exact evidence IDs'):
+        studio.resolve_evidence({'scenes':[{'evidence_ids':['9:9']}]},catalog)
+
+
+def test_writer_repairs_actual_rejected_draft():
+    plan=sample_plan()
+    bad=sample_plan()
+    bad['scenes'][0]['narration'][0]='This is an overly long sentence with eleven distinct separate words.'
+    calls=[]
+    answers=iter([json.dumps(bad),json.dumps(plan),' {"approved":true,"issues":[]} '])
+    async def ask(prompt,*args):calls.append(prompt);return next(answers)
+    asyncio.run(studio.write_script('How it works',[{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
+    assert 'Revise this previous draft' in calls[1]
+    assert bad['scenes'][0]['narration'][0] in calls[1]
+
+
 def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypatch):
     from PIL import Image,ImageDraw
     image=Image.new('RGB',(800,800),'white')

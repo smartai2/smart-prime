@@ -58,7 +58,9 @@ def test_licensing_and_simulation_filter(monkeypatch):
     monkeypatch.setattr(studio,'api_json',lambda *a:{'query':{'pages':{
         '1':page(1,'CC0'),'2':page(2,'CC BY-NC 4.0'),'3':page(3,'CC BY-SA 4.0'),
         '4':page(4,'CC0','SpaceX Starship animation.webm'),'5':page(5,'CC BY 4.0'),
-        '6':page(6,'CC BY 4.0','Mickey Thomas and Starship band.webm')}}})
+        '6':page(6,'CC BY 4.0','Mickey Thomas and Starship band.webm'),
+        '7':page(7,'CC0',"Artist Concepts of SpaceX Starship.webm"),
+        '8':page(8,'CC0','SpaceX Starship models.webm')}}})
     found=studio.commons_media('Starship','video')
     assert len(found)==2
     assert {m.license for m in found}=={'CC0','CC BY 4.0'}

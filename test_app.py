@@ -42,6 +42,7 @@ def test_delivery_routes_and_expiry(bot_app,tmp_path):
     os.utime(folder,(old,old))
     assert client.get(f'/short-download/{handle}/FIRST_STAGE.mp4').status_code==404
     assert handle not in client.get('/').text
+    assert client.head('/').status_code==200
 
 
 def test_frozen_and_duplicate_jobs_do_not_start(bot_app):

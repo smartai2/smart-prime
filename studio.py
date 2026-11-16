@@ -363,12 +363,16 @@ def validate_script(raw, sources):
         heading = field(scene, "heading", 48)
         query = field(scene, "visual_query", 80)
         phrases = scene.get("narration")
-        if not isinstance(phrases, list) or not 1 <= len(phrases) <= 3:
-            raise ValueError("One to three phrases per scene.")
+        if not isinstance(phrases, list) or not 1 <= len(phrases) <= 4:
+            raise ValueError("One to four complete sentences per scene.")
         phrases = [field({"phrase": p}, "phrase", 400) for p in phrases]
-        overlong=[p for p in phrases if len(p.split())>10 or len(p)>80]
+        # Split only at actual sentence boundaries, never in the middle of a clause.
+        phrases=[sentence.strip() for p in phrases for sentence in re.split(r'(?<=[.!?])\s+(?=[A-Z])',p) if sentence.strip()]
+        if len(phrases)>4:
+            raise ValueError('Use at most four complete sentences per scene; remove repetition.')
+        overlong=[p for p in phrases if len(p.split())>12 or len(p)>80]
         if overlong:
-            raise ValueError("Rewrite these as COMPLETE sentences of at most 10 words/80 characters: "+json.dumps(overlong)+". Never split a clause across entries.")
+            raise ValueError("Rewrite these as COMPLETE sentences of at most 12 words/80 characters: "+json.dumps(overlong)+". Never split a clause across entries.")
         if any(not re.search(r'[.!?][\"”]?$' ,p) for p in phrases):
             raise ValueError("Each narration entry must be a complete, punctuated sentence, not half a clause.")
         words += sum(len(p.split()) for p in phrases)
@@ -423,8 +427,8 @@ async def write_script(topic, sources, ask, stopped=lambda: False):
 Format: {"title":"...", "scenes":[{"heading":"...", "visual_query":"Starship launch",
 "narration":["A complete, natural spoken phrase.","Another phrase."],
 "evidence_ids":["1:1"]}]}.
-Use 4-6 scenes, 80-145 narration words total. Each scene has 1-3 spoken phrases,
-each a COMPLETE sentence <=10 words and <=80 characters. Never split a clause across
+Use 4-6 scenes, 80-145 narration words total. Each scene has 1-4 spoken phrases,
+each a COMPLETE sentence <=12 words and <=80 characters. Never split a clause across
 entries; rewrite long ideas as shorter sentences. Headings <=48 characters, title <=85.
 Start with an intriguing specific question or consequence in the first sentence.
 Develop ONE clear explanation with cause/effect and finish on a meaningful takeaway.
@@ -432,7 +436,7 @@ No generic welcome, hype, clickbait, stock call to subscribe, or invented number
 Use everyday language and varied sentence lengths. Write for a warm American narrator.
 Support EVERY factual claim with 1-3 evidence IDs from the supplied catalogue. Do not
 write quotations; the application attaches the exact source excerpts for those IDs.
-Aim for 5 scenes with 3 sentences each, generally 6-9 words per sentence. Count words.
+Aim for 5 scenes with 3 sentences each, generally 6-10 words per sentence. Count words.
 Preserve attribution, uncertainty and the distinction between plans
 and observed results. Do not turn archive information into current news. Do not imply
 every visual is from the event described. visual_query must name the subject and action.
@@ -473,6 +477,11 @@ Be strict about conclusions unsupported by the cited evidence. Explicitly compar
 tense/modality: 'intended to carry crew' does NOT support 'carries crew'; plans to reuse
 do NOT establish operational reusability. Every sentence must stand naturally on its
 own when spoken. Reject unfinished clauses even if the next sentence completes them.
+Accept faithful paraphrases: 'designed to' and 'intended to' both express a plan, not
+demonstrated success. 'Would allow potential reuse' is conditional. Do not demand
+verbatim source wording or reject ordinary stage terminology when the source clearly
+identifies a two-stage system, its booster, and its upper stage. Reject actual changes
+of meaning, unsupported facts and statements that imply plans have already happened.
 """ + json.dumps({"plan": plan, "sources": sources})
         for review_attempt in range(2):
             review = await ask(review_request + ("\nReturn ONLY the JSON approval object, without commentary." if review_attempt else ""), (attempt+1)%3)

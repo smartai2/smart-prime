@@ -34,7 +34,7 @@ def test_review_wrapping_is_tolerated_but_conflicting_answers_are_not():
 
 
 def test_script_rejects_unfinished_clauses_and_overlong_narration():
-    for phrase in ['The ship is designed to', 'This is an overly long sentence with eleven distinct separate words.']:
+    for phrase in ['The ship is designed to', 'This is an overly long sentence which contains far too many distinct separate words.']:
         plan=sample_plan()
         plan['scenes'][0]['narration'][0]=phrase
         with pytest.raises(ValueError):
@@ -82,13 +82,21 @@ def test_evidence_ids_attach_original_text_and_reject_invented_ids():
 def test_writer_repairs_actual_rejected_draft():
     plan=sample_plan()
     bad=sample_plan()
-    bad['scenes'][0]['narration'][0]='This is an overly long sentence with eleven distinct separate words.'
+    bad['scenes'][0]['narration'][0]='This is an overly long sentence which contains far too many distinct separate words.'
     calls=[]
     answers=iter([json.dumps(bad),json.dumps(plan),' {"approved":true,"issues":[]} '])
     async def ask(prompt,*args):calls.append(prompt);return next(answers)
     asyncio.run(studio.write_script('How it works',[{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
     assert 'Revise this previous draft' in calls[1]
     assert bad['scenes'][0]['narration'][0] in calls[1]
+
+
+def test_complete_sentences_are_split_without_cutting_clauses():
+    plan=sample_plan()
+    plan['scenes'][0]['narration']=[' '.join(plan['scenes'][0]['narration'])]
+    result=studio.validate_script(plan,[{'id':1,'text':'This is the exact source evidence for the explanation.'}])
+    assert len(result['scenes'][0]['narration'])==3
+    assert result['word_count']==96
 
 
 def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypatch):

@@ -59,6 +59,25 @@ def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypa
     assert shots[-1]['kind']=='image'
 
 
+def test_full_range_jpeg_renders_as_compatible_limited_range_video(tmp_path):
+    import math,wave
+    from array import array
+    from PIL import Image,ImageDraw
+    photo=Image.new('RGB',(800,1000),'#173F77')
+    ImageDraw.Draw(photo).rectangle((150,200,650,800),fill='#ECE7DD')
+    photo.save(tmp_path/'photo.jpg')
+    voice=tmp_path/'tone.wav'
+    duration=25.2;rate=16000
+    with wave.open(str(voice),'wb') as w:
+        w.setnchannels(1);w.setsampwidth(2);w.setframerate(rate)
+        w.writeframes(array('h',(int(3500*math.sin(2*math.pi*440*n/rate)) for n in range(int(duration*rate)))).tobytes())
+    plan={'scenes':[{'heading':'COLOR FORMAT CHECK','visual_query':'Rocket','narration':['A test of the delivered video format.']} ]}
+    assets=[studio.Media('Rocket','','','Test fixture','CC0','','image',path='photo.jpg')]
+    result,report=studio.render_edit(plan,assets,[{'duration':duration,'output':str(voice)}],tmp_path)
+    assert report['technical_checks']=='passed'
+    assert studio.probe(result/'FIRST_STAGE.mp4')['yuv420p'] is True
+
+
 @pytest.mark.parametrize('url',[
     'http://www.nasa.gov/a','https://nasa.gov.attacker.example/a',
     'https://nasa.gov@127.0.0.1/a','https://127.0.0.1/a',

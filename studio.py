@@ -815,7 +815,7 @@ def render_edit(plan, assets, voices, root, stopped=lambda: False, progress=lamb
                 motion = (f"scale=1200:1200:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1200:1200:(ow-iw)/2:(oh-ih)/2:color=0x121C2B,"
                           f"zoompan=z='1+0.035*on/{frames}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d={frames}:s=1080x1080:fps={FPS}")
             graph = (f"[0:v]{motion},pad=1080:1920:0:392:color=0x0B111B,setsar=1[base];"
-                     "[base][1:v]overlay=0:0:eof_action=repeat,format=yuv420p[v];"
+                     "[base][1:v]overlay=0:0:eof_action=repeat,scale=out_range=tv:out_color_matrix=bt709,format=yuv420p[v];"
                      f"[2:a]aresample=48000,aformat=channel_layouts=mono,apad,atrim=duration={duration:.6f}[a]")
             progress(f"Editing shot {voice_index+1} of {total}")
             ffmpeg("-loglevel", "error", *inputs, "-i", layer, "-i", item["output"],
@@ -823,6 +823,8 @@ def render_edit(plan, assets, voices, root, stopped=lambda: False, progress=lamb
                    "-map", "[v]", "-map", "[a]", "-t", f"{duration:.6f}",
                    "-c:v", "libx264", "-preset", "superfast", "-crf", "21",
                    "-maxrate", "5M", "-bufsize", "10M", "-threads", "1",
+                   "-pix_fmt", "yuv420p", "-color_range", "tv", "-colorspace", "bt709",
+                   "-color_primaries", "bt709", "-color_trc", "bt709",
                    "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart", target,
                    stopped=stopped, timeout=480)
             shots.append(target)
@@ -879,6 +881,7 @@ def srt_time(seconds):
 
 def quality_check(video, captions, expected, stopped=lambda: False):
     info = probe(video)
+    logging.info('Studio output format: %s',info)
     if (info['width'],info['height']) != (WIDTH,HEIGHT) or not info['h264'] or not info['yuv420p'] or not info['aac'] or info['audio']!=1:
         raise StudioError("Video format failed delivery checks.")
     if abs(info['duration']-expected) > .4:

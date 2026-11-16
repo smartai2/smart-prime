@@ -891,6 +891,8 @@ async def run_studio_job(u,c,topic):
         stage=state.get("studio_phase","production")
         status("Failed during "+stage)
         logging.warning("Studio failed at %s (%s)",stage,type(error).__name__)
+        frames=traceback.extract_tb(error.__traceback__)[-3:]
+        logging.warning("Studio failure locations: %s",[(Path(f.filename).name,f.lineno,f.name) for f in frames])
         await u.message.reply_text(f"The job failed during {stage.lower()}. No incomplete video was delivered. Try /video again.")
     finally:
         pulse.cancel()

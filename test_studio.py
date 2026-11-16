@@ -41,6 +41,24 @@ def test_malformed_review_is_retried_without_skipping_editorial_check():
     assert 'approved' in plan['editorial_check']
 
 
+def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypatch):
+    from PIL import Image,ImageDraw
+    image=Image.new('RGB',(800,800),'white')
+    ImageDraw.Draw(image).rectangle((0,0,400,800),fill='black')
+    image.save(tmp_path/'still.jpg')
+    def extract(*args,**kwargs):
+        offset=float(args[args.index('-ss')+1])
+        if offset!=1:
+            image.save(args[-1])
+    monkeypatch.setattr(studio,'ffmpeg',extract)
+    assets=[studio.Media('Launch','','','NASA','CC0','','video',path='clip.webm',duration=10),
+            studio.Media('Rocket','','','NASA','CC0','','image',path='still.jpg')]
+    sheet,shots=studio.contact_sheet(assets,tmp_path)
+    assert sheet.is_file()
+    assert len(shots)==3
+    assert shots[-1]['kind']=='image'
+
+
 @pytest.mark.parametrize('url',[
     'http://www.nasa.gov/a','https://nasa.gov.attacker.example/a',
     'https://nasa.gov@127.0.0.1/a','https://127.0.0.1/a',

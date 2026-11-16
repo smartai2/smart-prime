@@ -571,8 +571,26 @@ def contact_sheet(assets, root, stopped=lambda: False):
         for offset in dict.fromkeys(points):
             check(stopped)
             target = root/f"scout_{len(frames):03}.jpg"
-            ffmpeg('-loglevel','error','-ss',str(offset),'-i',root/media.path,
-                   '-frames:v','1','-vf','scale=440:250:force_original_aspect_ratio=decrease',target,stopped=stopped)
+            try:
+                if media.kind == 'image':
+                    with Image.open(root/media.path) as still:
+                        still=still.convert('RGB')
+                        still.thumbnail((440,250))
+                        still.save(target)
+                else:
+                    ffmpeg('-loglevel','error','-ss',str(offset),'-i',root/media.path,
+                           '-frames:v','1','-vf','scale=440:250:force_original_aspect_ratio=decrease',target,stopped=stopped)
+                # FFmpeg can exit successfully at a missing/keyframe-only timestamp
+                # without writing an image. Never treat that as a usable shot.
+                if not target.is_file() or not target.stat().st_size:
+                    logging.info('Studio skipped unavailable frame at %.2fs in media %d',offset,index)
+                    continue
+            except Cancelled:
+                raise
+            except (StudioError,OSError):
+                logging.info('Studio skipped unreadable frame in media %d',index)
+                target.unlink(missing_ok=True)
+                continue
             with Image.open(target) as image:
                 gray=image.convert('L')
                 stats=ImageStat.Stat(gray)

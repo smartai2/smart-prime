@@ -482,7 +482,7 @@ def commons_media(query, kind, stopped=lambda: False, broad=False):
                      page["title"] + " " + description + " " + value('Categories'), re.I):
             continue
         context=page["title"]+" "+description+" "+value('Categories')
-        if query=='Starship' and not re.search(r'Space\s?X|Super Heavy|Starbase|rocket',context,re.I):
+        if query=='Starship' and not re.search(r'Space\s?X|Super Heavy|Starbase|rocket|\bIFT[- ]?\d+',context,re.I):
             continue
         if not keywords(query).intersection(keywords(page["title"] + " " + description)):
             continue
@@ -504,9 +504,9 @@ def commons_media(query, kind, stopped=lambda: False, broad=False):
                             value("Artist") or "Public-domain contributor", licence, licence_url,
                             kind, value("DateTimeOriginal")[:10], description[:500], w, h,
                             duration=float(info.get("duration", 0))))
-    if len(output)<2 and query=='Starship' and not broad:
+    if query=='Starship' and not broad and (kind=='video' or len(output)<2):
         output.extend(commons_media(query,kind,stopped,broad=True))
-    return output
+    return list({m.page:m for m in output}.values())
 
 
 def nasa_media(query, kind, stopped=lambda: False):
@@ -563,16 +563,23 @@ def acquire_media(topic, plan, root, stopped=lambda: False):
                     candidates.append(media)
     # Avoid derivative compilations/comparisons that already contain another edit.
     candidates = [m for m in candidates if not re.search(r'\b(vs|versus|compilation|comparison)\b', m.title, re.I)]
-    candidates.sort(key=lambda m: (m.kind == "video", len(keywords(topic).intersection(keywords(m.title + " " + m.description)))), reverse=True)
+    if not re.search(r'\b(fail\w*|debris|breakup|explosion|mishap)\b',topic,re.I):
+        candidates=[m for m in candidates if not re.search(r'\b(debris|breakup|explosion|radar)\b',m.title,re.I)]
+    if not re.search(r'\b(weather|satellite|radar|plume)\b',topic,re.I):
+        candidates=[m for m in candidates if not re.search(r'\b(CIRA|radar|shadow of the rocket plume)\b',m.title+' '+m.description,re.I)]
+    candidates.sort(key=lambda m: (m.kind == "video",
+        bool(re.search(r'\b(launch|landing|liftoff|separation)\b',m.title+' '+m.description,re.I)),
+        m.author.strip().upper()=='NASA',
+        len(keywords(topic).intersection(keywords(m.title + " " + m.description)))), reverse=True)
     assets, flight_events = [], set()
     # Mix motion footage with detailed photography, rather than four distant launch views.
-    selected = [m for m in candidates if m.kind == 'video'][:7] + [m for m in candidates if m.kind == 'image'][:7]
+    selected = [m for m in candidates if m.kind == 'video'][:12] + [m for m in candidates if m.kind == 'image'][:7]
     for media in selected:
         check(stopped)
         if sum(m.kind == media.kind for m in assets) >= (3 if media.kind=='video' else 2):
             continue
         # Seek distinct launches/actions, not multiple views of the same test failure.
-        flight=re.search(r'\b(?:IFT[- ]?|Flight\s+)(\d+)\b',media.title,re.I)
+        flight=re.search(r'\b(?:IFT[- ]?|Flight\s+|integrated flight test\s*-?\s*)(\d+)\b',media.title,re.I)
         event=flight.group(1) if flight and subject=='Starship' and media.kind=='video' else None
         if event and event in flight_events:
             continue

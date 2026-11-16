@@ -144,7 +144,7 @@ def test_memory_budget_stops_an_oversized_worker():
 def test_licensing_and_simulation_filter(monkeypatch):
     def page(i,licence,title='SpaceX Starship launch.webm'):
         return {'title':'File:'+title,'index':i,'videoinfo':[{'url':'https://upload.wikimedia.org/test.webm',
-            'descriptionurl':'https://commons.wikimedia.org/wiki/File:'+title,'width':1280,'height':720,'size':1000,
+            'descriptionurl':'https://commons.wikimedia.org/wiki/File:'+str(i)+title,'width':1280,'height':720,'size':1000,
             'extmetadata':{'LicenseShortName':{'value':licence},'Artist':{'value':'Camera operator'},
                            'LicenseUrl':{'value':'https://creativecommons.org/licenses/by/4.0/'},
                            'ImageDescription':{'value':title}}}]}
@@ -154,9 +154,10 @@ def test_licensing_and_simulation_filter(monkeypatch):
         '6':page(6,'CC BY 4.0','Mickey Thomas and Starship band.webm'),
         '7':page(7,'CC0',"Artist Concepts of SpaceX Starship.webm"),
         '8':page(8,'CC0','SpaceX Starship models.webm'),
-        '9':page(9,'CC0','Starship could deploy retractable air-breaks.webm')}}})
+        '9':page(9,'CC0','Starship could deploy retractable air-breaks.webm'),
+        '10':page(10,'CC0','Starship IFT2 NASA launch.webm')}}})
     found=studio.commons_media('Starship','video')
-    assert len(found)==2
+    assert len(found)==3
     assert {m.license for m in found}=={'CC0','CC BY 4.0'}
 
 

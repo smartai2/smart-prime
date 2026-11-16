@@ -64,3 +64,17 @@ def test_private_commands_ignore_other_users(bot_app):
     u=SimpleNamespace(effective_chat=SimpleNamespace(id=1),message=SimpleNamespace(reply_text=AsyncMock()))
     asyncio.run(bot_app.cmd_video_latest(u,SimpleNamespace()))
     u.message.reply_text.assert_not_called()
+
+
+def test_model_request_has_total_deadline(bot_app,monkeypatch):
+    cancelled=[]
+    async def provider(**kwargs):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(True)
+    fake=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=provider)))
+    monkeypatch.setattr(bot_app,'brain',SimpleNamespace(with_options=lambda **kwargs:fake))
+    monkeypatch.setattr(bot_app,'STUDIO_MODEL_DEADLINE',0.02)
+    assert asyncio.run(bot_app.studio_ask('Return JSON'))==''
+    assert cancelled==[True]

@@ -795,6 +795,12 @@ async def studio_ask(prompt, attempt=0, images=None):
         logging.info('Studio writer reply (%s; %s; %d characters)',getattr(response,'model',model),response.choices[0].finish_reason if response.choices else 'no choices',len(result))
         return result
     except Exception as error:
+        if type(error).__name__=='RateLimitError':
+            detail=json.dumps(getattr(error,'body',{}),default=str).lower()
+            daily=any(term in detail for term in ('per-day','daily','daily_limit'))
+            logging.warning('Studio free AI rate limit: %s','daily quota' if daily else 'request/provider limit')
+            if daily:
+                raise studio.StudioError('The free AI daily quota is exhausted. No unchecked video was delivered. Retry after the quota resets.') from None
         logging.warning("Studio free writer unavailable (%s)",type(error).__name__)
         return ""
 

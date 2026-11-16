@@ -91,3 +91,14 @@ def test_studio_model_routes_cannot_fall_back_to_paid_models(bot_app,monkeypatch
         assert asyncio.run(bot_app.studio_ask('Return JSON',attempt))
     assert all(c['model'].endswith(':free') for c in calls)
     assert all(c['extra_body']['reasoning']['enabled'] is False for c in calls)
+
+
+def test_daily_quota_has_clear_error_without_logging_provider_body(bot_app,monkeypatch,caplog):
+    error=type('RateLimitError',(Exception,),{})('Quota exceeded')
+    error.body={'message':'Rate limit exceeded: free-models-per-day','private':'NEVER_LOG_PROVIDER_BODY'}
+    async def provider(**kwargs):raise error
+    fake=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=provider)))
+    monkeypatch.setattr(bot_app,'brain',SimpleNamespace(with_options=lambda **kwargs:fake))
+    with pytest.raises(bot_app.studio.StudioError,match='daily quota'):
+        asyncio.run(bot_app.studio_ask('Return JSON'))
+    assert 'NEVER_LOG_PROVIDER_BODY' not in caplog.text

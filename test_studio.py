@@ -84,11 +84,29 @@ def test_writer_repairs_actual_rejected_draft():
     bad=sample_plan()
     bad['scenes'][0]['narration'][0]='This is an overly long sentence which contains far too many distinct separate words.'
     calls=[]
-    answers=iter([json.dumps(bad),json.dumps(plan),' {"approved":true,"issues":[]} '])
+    answers=iter([json.dumps(bad),json.dumps({'replacements':[plan['scenes'][0]['narration'][0]]}),' {"approved":true,"issues":[]} '])
     async def ask(prompt,*args):calls.append(prompt);return next(answers)
     asyncio.run(studio.write_script('How it works',[{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
-    assert 'Revise this previous draft' in calls[1]
+    assert 'Sentences to shorten' in calls[1]
     assert bad['scenes'][0]['narration'][0] in calls[1]
+    assert 'evidence_catalogue' not in calls[1]
+    assert 'Fact-check this narration' in calls[2]
+
+
+def test_sentence_repair_cannot_remove_planned_capability_qualification():
+    source='This is the exact source evidence for the explanation. The spacecraft is intended to carry crew and cargo.'
+    bad=sample_plan()
+    bad['scenes'][0]['narration'][0]='The spacecraft is designed to act as a standalone vehicle for crew and cargo.'
+    bad['scenes'][0]['evidence']=[{'source_id':1,'quote':'The spacecraft is intended to carry crew and cargo.'}]
+    calls=[]
+    async def ask(prompt,*args):
+        calls.append(prompt)
+        if 'Sentences to shorten' in prompt:
+            return json.dumps({'replacements':['The spacecraft carries crew and cargo.']})
+        return json.dumps(bad)
+    with pytest.raises(studio.StudioError,match='evidence check'):
+        asyncio.run(studio.write_script('How it works',[{'id':1,'text':source}],ask))
+    assert not any('Fact-check this narration' in prompt for prompt in calls)
 
 
 def test_complete_sentences_are_split_without_cutting_clauses():
@@ -231,3 +249,4 @@ def test_quality_gate_rejects_wrong_resolution(tmp_path,monkeypatch):
     monkeypatch.setattr(studio,'probe',lambda p:{'width':640,'height':360,'h264':True,'yuv420p':True,'aac':True,'audio':1})
     with pytest.raises(studio.StudioError,match='format'):
         studio.quality_check(tmp_path/'bad.mp4',[],30)
+

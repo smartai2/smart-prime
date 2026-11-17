@@ -151,8 +151,12 @@ def test_editor_options_are_arranged_without_rejected_or_repeated_shots():
     assert all(a!=b for a,b in zip(ids,ids[1:]))
     assert sum(i<3 for i in ids)>=8
     answer['choices'][1]['ids']=[99]
-    with pytest.raises(ValueError,match='allowed list'):
+    with pytest.raises(ValueError,match='no approved alternatives'):
         studio.arrange_shot_options(answer,phrases,candidates,assets,range(5))
+
+    answer['choices']=[{'ids':['0',0,99,'1',2,3,4],'reason':'Relevant choices with duplicate and rejected alternatives.'} for _ in phrases]
+    shots=studio.arrange_shot_options(answer,phrases,candidates,assets,range(5))
+    assert all(s['id'] in range(5) for s in shots)
 
 
 def test_impossible_visual_options_stop_instead_of_inventing_matches():

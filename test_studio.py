@@ -119,6 +119,8 @@ def test_stage_explainer_rejects_fact_list_and_unqualified_heading():
     plan['scenes'][0]['heading']='The staging sequence'
     plan['scenes'][0]['narration']=['Super Heavy powers launch.','The upper stage starts its engines before separation.']
     studio.validate_topic_focus(plan,'How Starship stages work')
+    plan['scenes'][1]['narration']=['The 2024 test demonstrated this separation sequence.']
+    studio.validate_topic_focus(plan,'How Starship stages work')
     plan['scenes'][1]['narration']=['As of 2026, it has launched fifteen times.']
     with pytest.raises(ValueError,match='flight counts'):
         studio.validate_topic_focus(plan,'How Starship stages work')

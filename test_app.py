@@ -102,3 +102,19 @@ def test_daily_quota_has_clear_error_without_logging_provider_body(bot_app,monke
     with pytest.raises(bot_app.studio.StudioError,match='daily quota'):
         asyncio.run(bot_app.studio_ask('Return JSON'))
     assert 'NEVER_LOG_PROVIDER_BODY' not in caplog.text
+
+
+@pytest.mark.parametrize('video_fails',[False,True])
+def test_link_timeout_preserves_video_and_attempts_inline_delivery(bot_app,video_fails):
+    reply=AsyncMock(side_effect=TimeoutError())
+    send=AsyncMock(side_effect=TimeoutError() if video_fails else None)
+    u=SimpleNamespace(message=SimpleNamespace(reply_text=reply),effective_chat=SimpleNamespace(id=1))
+    c=SimpleNamespace(bot=SimpleNamespace(send_video=send))
+    result=asyncio.run(bot_app.deliver_studio_result(u,c,'https://example.test/output','Test',
+                     {'duration_seconds':40,'bytes':1234}))
+    assert reply.await_count==1
+    assert send.await_count==1
+    assert 'FIRST_STAGE_package.zip' in send.call_args.kwargs['caption']
+    assert ('unconfirmed' in result) if video_fails else ('Telegram video delivered' in result)
+    assert 'regenerate' in result if video_fails else True
+

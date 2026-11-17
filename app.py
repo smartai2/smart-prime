@@ -842,9 +842,47 @@ async def cmd_video_latest(u,c):
         if not is_short_handle(handle) or time.time()-saved["created"]>=SHORT_DOWNLOAD_TTL or not (SHORT_EXPORT_ROOT/handle/"FIRST_STAGE.mp4").is_file():
             raise FileNotFoundError
         url=f"https://smart-prime.onrender.com/short-download/{handle}"
-        await u.message.reply_text(f"{saved['title']}\n\nVideo: {url}/FIRST_STAGE.mp4\nFull package: {url}/FIRST_STAGE_package.zip",disable_web_page_preview=True)
+        c.application.bot_data['studio_phase']=await deliver_studio_result(u,c,url,saved['title'],saved['report'])
     except (OSError,ValueError,KeyError):
         await u.message.reply_text("No completed video is available on this instance. /video <topic> makes a new one.")
+
+
+async def deliver_studio_result(u,c,url,title,report):
+    """A lost Telegram acknowledgement must not invalidate a finished render.
+
+    Send links and inline video independently, once each. A timeout can occur
+    after Telegram accepts a message, so do not blindly duplicate that send.
+    /video_latest retries delivery from saved files without using AI quota.
+    """
+    links_confirmed=video_confirmed=False
+    message=(f"Your FIRST STAGE edit is ready: {title}\n"
+             f"{report['duration_seconds']:.0f} seconds · 1080 × 1920 · neural narration · burned-in captions\n\n"
+             f"Video: {url}/FIRST_STAGE.mp4\nThumbnail: {url}/FIRST_STAGE_thumbnail.jpg\n"
+             f"Full package: {url}/FIRST_STAGE_package.zip\n\n"
+             "The package includes video, captions, description, credits, script and quality report. "
+             "Archive footage is labelled. Review before publishing.\n\n"
+             "Save your files now. Links last up to 24 hours and can disappear sooner if the free server restarts. "
+             "/video_latest resends the finished files without making another video.")
+    try:
+        await asyncio.wait_for(u.message.reply_text(message,disable_web_page_preview=True,
+                               read_timeout=60,write_timeout=60),timeout=70)
+        links_confirmed=True
+    except Exception as error:
+        logging.info('Studio link delivery acknowledgement unavailable (%s); finished files retained',type(error).__name__)
+    if report['bytes']<45_000_000:
+        try:
+            await asyncio.wait_for(c.bot.send_video(chat_id=u.effective_chat.id,
+                video=url+'/FIRST_STAGE.mp4',caption=f"{title}\nFull package: {url}/FIRST_STAGE_package.zip",
+                supports_streaming=True,width=studio.WIDTH,height=studio.HEIGHT,
+                duration=round(report['duration_seconds']),read_timeout=75,write_timeout=60),timeout=90)
+            video_confirmed=True
+        except Exception as error:
+            logging.info('Studio inline video acknowledgement unavailable (%s); finished files retained',type(error).__name__)
+    if video_confirmed:
+        return 'Complete — Telegram video delivered; package link included'
+    if links_confirmed:
+        return 'Complete — video and package links delivered; inline preview unconfirmed'
+    return 'Video complete and saved — Telegram delivery unconfirmed. Use /video_latest; do not regenerate.'
 
 
 async def run_studio_job(u,c,topic):
@@ -869,28 +907,11 @@ async def run_studio_job(u,c,topic):
             status("Saving the finished video")
             url=await asyncio.to_thread(save_studio_downloads,result,plan,report)
             studio.check(stopped)
-            await u.message.reply_text(
-                f"Your FIRST STAGE edit is ready: {plan['title']}\n"
-                f"{report['duration_seconds']:.0f} seconds · 1080 × 1920 · neural narration · burned-in captions\n\n"
-                f"Video: {url}/FIRST_STAGE.mp4\n"
-                f"Thumbnail: {url}/FIRST_STAGE_thumbnail.jpg\n"
-                f"Full package: {url}/FIRST_STAGE_package.zip\n\n"
-                "The package includes the video, captions, upload description, credits, script and quality report. "
-                "Archive footage is labelled. Please review before publishing.\n\n"
-                "Save your files now. Links last up to 24 hours and can disappear sooner if the free Render instance restarts. "
-                "/video_latest retrieves the links while available.", disable_web_page_preview=True)
-            status("Complete — video and production package delivered")
-            log_action("STUDIO",f"Video delivered ({report['duration_seconds']:.1f}s; {report['media_count']} media sources)")
-            logging.info("Studio delivered (%.1fs; %d bytes)",report['duration_seconds'],report['bytes'])
-            # Telegram fetches the finished URL itself; never wait on multipart upload.
-            if report['bytes']<45_000_000:
-                try:
-                    await asyncio.wait_for(c.bot.send_video(chat_id=u.effective_chat.id,
-                        video=url+"/FIRST_STAGE.mp4",caption=plan['title'],supports_streaming=True,
-                        width=studio.WIDTH,height=studio.HEIGHT,duration=round(report['duration_seconds']),
-                        read_timeout=40,write_timeout=40),timeout=45)
-                except Exception as error:
-                    logging.info("Studio inline preview unavailable (%s); download already delivered",type(error).__name__)
+            status('Sending the finished video to Telegram')
+            delivery=await deliver_studio_result(u,c,url,plan['title'],report)
+            status(delivery)
+            log_action('STUDIO',delivery)
+            logging.info('Studio finished (%.1fs; %d bytes)',report['duration_seconds'],report['bytes'])
     except studio.Cancelled:
         status("Cancelled — no video published")
         await u.message.reply_text("Video production stopped.")
@@ -1041,4 +1062,5 @@ if __name__ == "__main__":
     logging.getLogger("uvicorn.access").addFilter(ShortDownloadAccessFilter())
     print(">>> FIRST STAGE STUDIO v4.0 READY")
     uvicorn.run(server, host="0.0.0.0", port=PORT)
+
 

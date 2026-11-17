@@ -109,6 +109,34 @@ def test_sentence_repair_cannot_remove_planned_capability_qualification():
     assert not any('Fact-check this narration' in prompt for prompt in calls)
 
 
+def test_stage_explainer_rejects_fact_list_and_unqualified_heading():
+    plan=sample_plan()
+    with pytest.raises(ValueError,match='Answer how'):
+        studio.validate_topic_focus(plan,'How Starship stages work')
+    plan['scenes'][0]['heading']='A Fully Reusable Rocket'
+    with pytest.raises(ValueError,match='Headlines'):
+        studio.validate_topic_focus(plan,'Starship')
+    plan['scenes'][0]['heading']='The staging sequence'
+    plan['scenes'][0]['narration']=['Super Heavy powers launch.','The upper stage starts its engines before separation.']
+    studio.validate_topic_focus(plan,'How Starship stages work')
+    plan['scenes'][1]['narration']=['As of 2026, it has launched fifteen times.']
+    with pytest.raises(ValueError,match='flight counts'):
+        studio.validate_topic_focus(plan,'How Starship stages work')
+
+
+def test_real_source_does_not_authorize_empty_sky_shots():
+    assets=[studio.Media('Launch','','','','','','video'),studio.Media('Concept','','','','','','image')]
+    candidates=[{'id':0,'media_index':0},{'id':1,'media_index':0},{'id':2,'media_index':1}]
+    answer={'media':[{'index':0,'type':'real'},{'index':1,'type':'illustration'}],
+            'shots':[{'id':0,'usable':True,'subject_visible':True},
+                     {'id':1,'usable':True,'subject_visible':False},
+                     {'id':2,'usable':True,'subject_visible':True}]}
+    assert studio.screened_shots(answer,assets,candidates)==[0]
+    answer['shots'].pop()
+    with pytest.raises(ValueError,match='every numbered shot'):
+        studio.screened_shots(answer,assets,candidates)
+
+
 def test_complete_sentences_are_split_without_cutting_clauses():
     plan=sample_plan()
     plan['scenes'][0]['narration']=[' '.join(plan['scenes'][0]['narration'])]

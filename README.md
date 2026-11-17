@@ -19,7 +19,7 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
 1. Read source pages; search snippets are discovery hints, not script evidence. Prefer
    primary sources, label reported material, and use encyclopedias only for background.
    Current-news requests need recent, dated reporting. This restriction can stop a job.
-2. Write an original 80–145 word explanation in complete short sentences, validate exact
+2. Write an original 80–145 word explanation that answers the requested mechanism, in complete short sentences, validate exact
    supporting quotations, preserve planned-capability wording, and obtain an editorial
    check from a different model route. This is an AI check, not a guarantee
    of factual correctness. Review the included script and sources before publication.
@@ -48,7 +48,7 @@ when publishing. The source footage's audio is discarded.
 
 Downloads are available **up to 24 hours on the current Render instance**. Free Render
 storage is ephemeral: a restart or redeploy can remove them earlier. Save the package
-when it arrives. `/video_latest` retrieves existing links; it is not permanent storage.
+when it arrives. `/video_latest` retries delivery of the saved video and links without using AI quota; it is not permanent storage.
 No additional paid service or storage subscription is enabled by this release.
 
 ## Runtime
@@ -93,3 +93,4 @@ Local test success does not replace checking the deployed Telegram workflow.
 
 Piper is distributed under GPL-3.0-or-later. This project uses the installed package;
 its license is separate from the voice dataset and individual footage licenses.
+

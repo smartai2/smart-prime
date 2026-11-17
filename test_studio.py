@@ -137,6 +137,31 @@ def test_real_source_does_not_authorize_empty_sky_shots():
         studio.screened_shots(answer,assets,candidates)
 
 
+def test_editor_options_are_arranged_without_rejected_or_repeated_shots():
+    assets=[studio.Media('Launch','','','','','','video'),studio.Media('Pad','','','','','','image')]
+    candidates=[{'id':i,'media_index':0 if i<3 else 1} for i in range(5)]
+    phrases=[{'narration':'A clear complete explanation.'} for _ in range(12)]
+    answer={'approved':True,'choices':[{'ids':[0,1,2,3,4],'reason':'Approved relevant alternatives.'} for _ in phrases]}
+    shots=studio.arrange_shot_options(answer,phrases,candidates,assets,range(5))
+    assert len(shots)==len(phrases)
+    ids=[s['id'] for s in shots]
+    assert len(set(ids))>=4
+    assert all(a!=b for a,b in zip(ids,ids[1:]))
+    assert sum(i<3 for i in ids)>=8
+    answer['choices'][1]['ids']=[99]
+    with pytest.raises(ValueError,match='allowed list'):
+        studio.arrange_shot_options(answer,phrases,candidates,assets,range(5))
+
+
+def test_impossible_visual_options_stop_instead_of_inventing_matches():
+    assets=[studio.Media('Launch','','','','','','video')]
+    candidates=[{'id':i,'media_index':0} for i in range(4)]
+    phrases=[{'narration':'A clear complete explanation.'} for _ in range(8)]
+    answer={'approved':True,'choices':[{'ids':[0],'reason':'Only this shot matches.'} for _ in phrases]}
+    with pytest.raises(ValueError,match='cannot satisfy'):
+        studio.arrange_shot_options(answer,phrases,candidates,assets,range(4))
+
+
 def test_complete_sentences_are_split_without_cutting_clauses():
     plan=sample_plan()
     plan['scenes'][0]['narration']=[' '.join(plan['scenes'][0]['narration'])]

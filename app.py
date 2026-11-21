@@ -940,6 +940,14 @@ async def run_studio_job(u,c,topic):
         await u.message.reply_text(str(error))
         diagnostic=getattr(error,'diagnostic',None)
         if diagnostic:
+            draft=diagnostic.get('draft') or {}
+            lines=['REJECTED DRAFT — not approved for publication',str(draft.get('title',''))]
+            for scene in draft.get('scenes',[]):
+                if isinstance(scene,dict):
+                    narration=scene.get('narration',[])
+                    lines.append(str(scene.get('heading',''))+': '+(' '.join(str(x) for x in narration) if isinstance(narration,list) else str(narration)))
+            lines.append('REVIEW: '+str(diagnostic.get('issue','')))
+            await u.message.reply_text('\n\n'.join(lines)[:3900])
             from io import BytesIO
             data=json.dumps(diagnostic,indent=2,ensure_ascii=False).encode()
             if len(data)<300_000:

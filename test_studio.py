@@ -97,6 +97,21 @@ def test_review_correction_requires_fresh_approval_without_another_writer_call()
     assert 'Corrected heading' in calls[2]
 
 
+def test_editorial_revision_keeps_original_quotes_and_visual_queries():
+    original=sample_plan()
+    proposed=json.loads(json.dumps(original))
+    proposed['scenes'][0]['heading']='Corrected heading'
+    proposed['scenes'][0]['evidence']=[{'source_id':2,'quote':'Fabricated source quote.'}]
+    proposed['scenes'][0]['visual_query']='An unrelated spacecraft'
+    revised=studio.editorial_revision(original,proposed)
+    assert revised['scenes'][0]['evidence']==original['scenes'][0]['evidence']
+    assert revised['scenes'][0]['visual_query']==original['scenes'][0]['visual_query']
+    assert revised['scenes'][0]['heading']=='Corrected heading'
+    assert original['scenes'][0]['heading']=='The explanation'
+    with pytest.raises(ValueError,match='scene count'):
+        studio.editorial_revision(original,{'scenes':[]})
+
+
 def test_reviewer_cannot_approve_its_own_correction_or_invent_evidence():
     invalid=sample_plan()
     invalid['scenes'][0]['evidence'][0]['quote']='This invented evidence is absent from the source.'

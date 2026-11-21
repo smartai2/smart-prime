@@ -99,7 +99,7 @@ def test_model_request_has_total_deadline(bot_app,monkeypatch):
     assert cancelled==[True]
 
 
-def test_studio_model_routes_cannot_fall_back_to_paid_models(bot_app,monkeypatch):
+def test_studio_model_routes_cannot_fall_back_to_paid_models(bot_app,monkeypatch,tmp_path):
     calls=[]
     async def provider(**kwargs):
         calls.append(kwargs)
@@ -108,8 +108,16 @@ def test_studio_model_routes_cannot_fall_back_to_paid_models(bot_app,monkeypatch
     monkeypatch.setattr(bot_app,'brain',SimpleNamespace(with_options=lambda **kwargs:fake))
     for attempt in range(3):
         assert asyncio.run(bot_app.studio_ask('Return JSON',attempt))
+    picture=tmp_path/'fixture.jpg';picture.write_bytes(b'image fixture')
+    for attempt in range(2):
+        assert asyncio.run(bot_app.studio_ask('Inspect JSON',attempt,images=[picture]))
     assert all(c['model'].endswith(':free') for c in calls)
-    assert all(c['extra_body']['reasoning']['enabled'] is False for c in calls)
+    assert all(c['extra_body']['reasoning']['exclude'] is True for c in calls)
+    assert calls[0]['extra_body']['reasoning']['max_tokens'] < calls[0]['max_tokens']
+    assert 'response_format' not in calls[0]
+    assert calls[1]['extra_body']['reasoning']['effort']=='high'
+    assert all(c['extra_body']['reasoning']['enabled'] is False for c in calls[3:])
+    assert all(c['model'] not in [v['model'] for v in calls[3:]] for c in calls[:3])
 
 
 def test_daily_quota_has_clear_error_without_logging_provider_body(bot_app,monkeypatch,caplog):

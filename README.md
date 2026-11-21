@@ -24,7 +24,9 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
    check in a separate model call. This is an AI check, not a guarantee
    of factual correctness. Review the included script and sources before publication.
    Reviewers can propose minimal corrections, which must pass exact-evidence validation
-   and a new editorial call. This avoids rewriting accepted passages and saves free quota.
+   and a new editorial call. Corrections can change only title, headings and narration;
+   original evidence quotations and visual queries are retained by the application.
+   This avoids rewriting accepted passages and saves free quota.
 3. Find licensed motion footage and photography on Wikimedia Commons or NASA. Reject
    unknown rights, NC/SA licenses, animations masquerading as footage, unrelated bands
    called Starship, and pre-edited comparisons. Require usable resolution and real video.
@@ -58,8 +60,10 @@ No additional paid service or storage subscription is enabled by this release.
 
 - Python entrypoint: `python app.py`; dependencies: `pip install -r requirements.txt`.
 - Existing `SMART_TOKEN`, `BRAIN_API_KEY`, owner and YouTube settings remain in use.
-- Studio uses verified free multimodal routes (Nemotron 3.5 Super VL and Particle 1) that allow reasoning to be disabled, with a 95-second total
-  request deadline. Requests are paced; a non-daily rate limit imposes a bounded
+- Studio uses free text reasoning routes (Nemotron 3 Ultra and ERNIE 5.5 Flash) for
+  writing/review, and Nemotron 3.5 Super VL/Particle 1 for visual inspection. Text
+  reasoning budgets leave room for final JSON; vision reasoning is disabled. Each
+  request has a 95-second total deadline. Requests are paced; a non-daily rate limit imposes a bounded
   cooldown before another attempt. This avoids random routes consuming the entire allowance
   without returning a script. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.

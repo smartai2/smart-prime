@@ -459,6 +459,23 @@ def validate_topic_focus(plan,topic):
             raise ValueError('Answer how the stages work: explain the booster launch role, upper-stage propulsion, and separation sequence using the primary evidence. Names alone are not an explanation.')
 
 
+def editorial_revision(original, proposed):
+    """Apply text changes only; a reviewer cannot alter evidence or shot queries."""
+    scenes=proposed.get('scenes')
+    if not isinstance(scenes,list) or len(scenes)!=len(original['scenes']):
+        raise ValueError('A correction must preserve the scene count and order.')
+    revised=json.loads(json.dumps(original))
+    if 'title' in proposed:
+        revised['title']=field(proposed,'title',85)
+    for target,patch in zip(revised['scenes'],scenes):
+        if not isinstance(patch,dict):
+            raise ValueError('Each corrected scene must be an object.')
+        for key in ('heading','narration'):
+            if key in patch:
+                target[key]=patch[key]
+    return revised
+
+
 async def write_script(topic, sources, ask, stopped=lambda: False):
     instruction = """Produce a FIRST STAGE editorial YouTube Short. Only JSON.
 Format: {"title":"...", "scenes":[{"heading":"...", "visual_query":"Starship launch",
@@ -602,8 +619,10 @@ headline and causal conclusion. Reject exaggeration, unsupported implications,
 unverified current claims and background footage being described as today's event.
 Return only {"approved":true,"issues":[]} when supported. If a concrete defect exists,
 return {"approved":false,"issues":["exact claim, source evidence and required change"],
-"corrected_plan":{...}}. corrected_plan must be the COMPLETE plan in the same schema
-as the supplied plan, retaining its exact source quotes. Make only minimal changes to
+"corrected_plan":{"title":"...","scenes":[{"heading":"...","narration":["..."]}]}}.
+corrected_plan must contain all scenes in their original order, with the same count.
+Return ONLY title, headings and narration in that correction. Do not reproduce or
+change evidence, source quotes or visual queries; the application retains them. Make only minimal changes to
 the defective sentences/headings; preserve supported passages, focus and sequence.
 Use 4-6 scenes, 80-170 words, 1-6 complete sentences per scene, each <=12 words and
 <=120 characters. A correction will undergo validation and a NEW review; it is not approval.
@@ -651,7 +670,10 @@ capabilities, dates, statistics, or claims that design goals have been achieved.
                     last_error = json.dumps(audit['issues'],ensure_ascii=False)[:3500]
                     logging.info('Studio editorial review requested changes: %s',last_error[:1800])
                     if isinstance(audit.get('corrected_plan'),dict):
-                        pending_revision = audit['corrected_plan']
+                        try:
+                            pending_revision = editorial_revision(plan,audit['corrected_plan'])
+                        except (ValueError,TypeError,KeyError):
+                            logging.info('Studio rejected an invalid editorial correction shape')
                     break
                 raise ValueError("Review needs boolean approved and a matching issues list.")
             except (ValueError, TypeError) as error:

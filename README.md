@@ -11,8 +11,9 @@ Make a Short about why rockets use stages
 ```
 
 The bot makes a vertical 1080 × 1920 Short, normally 40–85 seconds. One job runs at a time.
-It reports progress and stops when Juan says **Smart Freeze**. It does not publish the new
-Studio videos to YouTube automatically. The older inbox and YouTube commands remain separate.
+It reports progress and stops when Juan says **Smart Freeze**. Automatic public uploads
+are opt-in and require a verified FIRST STAGE connection plus all Studio quality checks.
+The old arbitrary-inbox public uploader has been removed.
 
 ## Production workflow
 
@@ -111,3 +112,47 @@ Piper is distributed under GPL-3.0-or-later. This project uses the installed pac
 its license is separate from the voice dataset and individual footage licenses.
 
 
+
+## YouTube connection and automatic public uploads
+
+Juan selected automatic public publishing on November 21, 2026. The code supports
+that mode, but it remains off until enabled and Google authorization is complete.
+No rejected draft qualifies. `/yt_upload` now uses the latest checked Studio output,
+its actual title and its complete source/media credits, never an arbitrary inbox file.
+`/yt_auto on` enables public uploads after future successful Studio jobs;
+`/yt_auto off` disables them. `YT_AUTO_PUBLISH=1` makes the preference survive restarts.
+`/video_latest` only resends Telegram delivery and does not upload again.
+
+Configure the existing Google project with a **Web application** OAuth client and
+this exact authorized redirect URI:
+
+```
+https://smart-prime.onrender.com/youtube/callback
+```
+
+Keep its client ID and secret in Render's `YT_CLIENT_ID` and `YT_CLIENT_SECRET`.
+Enable YouTube Data API v3 and YouTube Analytics API for the requested scopes.
+Use `/connect_youtube`, select FIRST STAGE in Google, and grant the displayed
+permissions. The callback exchanges the code server-side using PKCE and a
+single-use, ten-minute state. Codes and credentials are not accepted/exported
+through Telegram. `/yt_status` verifies the actual channel, upload permissions,
+automatic-publishing mode and persistence. The expected channel is
+`@FirstStageOfficial`; `YT_CHANNEL_ID` can pin its verified channel ID. A wrong
+channel stops connection/upload.
+
+**Persistence still needs configuration after consent:** on the free Render
+instance, SQLite does not survive redeployment. The authorized-user credential
+JSON can be downloaded once from the success page (ten-minute secure HttpOnly browser cookie, never a credential-bearing URL) and must be saved as the Render secret `YT_TOKEN` or a Render secret file named
+`YT_TOKEN.json` (default path `/etc/secrets/YT_TOKEN.json`). Never commit this JSON
+or send it through chat. `/yt_status` reports whether the current refresh token
+matches persistent storage; a connection is not considered durable merely
+because consent succeeded. Google Testing-mode refresh tokens may expire after
+seven days; check the project's audience/production configuration in Google.
+
+Uploads use resumable chunks, retain complete credits, honor Freeze/cancellation,
+and record the video hash before the first upload request. An uncertain result
+stops without blind retries to prevent duplicate publications. The returned
+visibility and processing/upload status are reported rather than assuming the
+video is already publicly playable. A YouTube failure does not discard the
+finished Telegram video. These paths are tested with mocked Google responses;
+a real channel authorization and upload must still be verified.

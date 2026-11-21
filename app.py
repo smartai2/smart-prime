@@ -394,30 +394,14 @@ print(f">>> OWNER BOOT CODE: {BOOT}")
 
 
 # ============ MODULE 6: THE VOICE (YouTube + Reddit hands) ============
-YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload",
-             "https://www.googleapis.com/auth/youtube.readonly",
-             "https://www.googleapis.com/auth/yt-analytics.readonly"]
+from youtube_bridge import YouTubeBridge, YouTubeError, CALLBACK as YT_CALLBACK
 
-def _yt_client_config():
-    cid = os.environ.get("YT_CLIENT_ID", ""); sec = os.environ.get("YT_CLIENT_SECRET", "")
-    return {"installed": {"client_id": cid, "client_secret": sec,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": ["http://localhost"]}}
+youtube = YouTubeBridge(get_setting, set_setting)
 
 def _yt_creds():
-    raw = os.environ.get("YT_TOKEN", "") or get_setting("yt_token")
-    if not raw: return None
     try:
-        from google.oauth2.credentials import Credentials
-        from google.auth.transport.requests import Request
-        creds = Credentials.from_authorized_user_info(json.loads(raw))
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            set_setting("yt_token", creds.to_json())
-        return creds
-    except Exception as e:
-        log_action("ERROR", f"yt_creds: {str(e)[:80]}")
+        return youtube.credentials()
+    except YouTubeError:
         return None
 
 def _yt_metrics_update():
@@ -589,95 +573,88 @@ async def cmd_make_video(u, c):
         await u.message.reply_text("Build failed: " + str(r.stderr)[-250:])
 
 async def cmd_connect_youtube(u, c):
-    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
-        set_setting("owner_chat_id", u.effective_chat.id)
-        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
-    if not is_owner(u): return
-    if not os.environ.get("YT_CLIENT_ID"):
-        await u.message.reply_text("Add YT_CLIENT_ID and YT_CLIENT_SECRET to Render Environment first (guide Step A)."); return
-    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-    from google_auth_oauthlib.flow import Flow
-    flow = Flow.from_client_config(_yt_client_config(), scopes=YT_SCOPES, autogenerate_code_verifier=False)
-    flow.redirect_uri = "http://localhost"
-    url, _ = flow.authorization_url(access_type="offline", prompt="consent")
-    await u.message.reply_text("STEP 1 - open this link while signed into the FIRST STAGE Google account:\n\n" + url +
-        "\n\nSTEP 2 - authorize everything. Browser will show 'localhost refused to connect' - that is NORMAL."
-        "\nSTEP 3 - copy the FULL address from the browser's address bar (starts with http://localhost/?code=...) and paste it right here in this chat.")
+    if not studio_owner(u): return
+    try:
+        url = youtube.start()
+        await u.message.reply_text("Connect FIRST STAGE using Google's secure authorization page:\n\n" + url +
+            "\n\nSelect the FIRST STAGE channel. The browser returns to Smart automatically; "
+            "do not paste passwords or authorization codes into Telegram. This link expires in 10 minutes. "
+            "Then use /yt_status to verify the connection.", disable_web_page_preview=True)
+    except YouTubeError as error:
+        await u.message.reply_text(str(error))
+
 
 async def cmd_yt_token(u, c):
-    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
-        set_setting("owner_chat_id", u.effective_chat.id)
-        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
-    if not is_owner(u): return
-    text = u.message.text.strip()
-    if "code=" not in text:
-        await u.message.reply_text("Paste the full localhost URL from the browser address bar."); return
-    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-    from google_auth_oauthlib.flow import Flow
-    flow = Flow.from_client_config(_yt_client_config(), scopes=YT_SCOPES, autogenerate_code_verifier=False)
-    flow.redirect_uri = "http://localhost"
-    try:
-        flow.fetch_token(authorization_response=text)
-        set_setting("yt_token", flow.credentials.to_json())
-        log_action("YT", "connected")
-        await u.message.reply_text("YouTube hands connected. /yt_metrics for live numbers. /yt_upload to publish a render. Metrics auto-feed the goal tracker from now on.")
-    except Exception as e:
-        await u.message.reply_text("Token exchange failed: " + str(e)[:200])
+    if not studio_owner(u): return
+    await u.message.reply_text("Authorization codes are no longer accepted in chat. Use /connect_youtube and the secure Google callback.")
+
 
 async def cmd_yt_export(u, c):
-    if not is_owner(u): return
-    raw = get_setting("yt_token")
-    if not raw:
-        await u.message.reply_text("No token in memory. /connect_youtube first."); return
-    await u.message.reply_text("PERMANENCE KEY - add this to Render Environment as YT_TOKEN. It survives every redeploy forever:\n\n" + raw)
-    log_action("YT", "token exported")
+    if not studio_owner(u): return
+    await u.message.reply_text("Connection credentials are never sent through Telegram. Permanent storage must be configured as a Render secret.")
+
+
+async def cmd_yt_status(u, c):
+    if not studio_owner(u): return
+    try:
+        state = await asyncio.to_thread(youtube.status)
+        persistence = ('Saved for restarts.' if state['persistent'] else
+            'Connection is only saved on this instance. A Render YT_TOKEN secret or YT_TOKEN.json secret file is still required for restarts.')
+        await u.message.reply_text(f"YouTube connected: {state['title']} (@{state['handle']})\n"
+            f"Channel: {state['id']}\nAutomatic public uploads: {'ON' if youtube.auto_enabled() else 'OFF'}\n"
+            "Only Studio videos passing evidence, technical and final picture checks qualify.\n"+persistence)
+    except YouTubeError as error:
+        await u.message.reply_text(str(error))
+
+
+async def cmd_yt_auto(u, c):
+    if not studio_owner(u): return
+    value = u.message.text.partition(' ')[2].strip().lower()
+    if value not in ('on','off'):
+        await u.message.reply_text('Usage: /yt_auto on or /yt_auto off. ON publishes passing Studio videos publicly.'); return
+    set_setting('yt_auto_publish', '1' if value=='on' else '0')
+    await u.message.reply_text('Automatic public uploads '+value.upper()+'. Channel authorization and all Studio checks are still required.')
+
 
 async def cmd_yt_metrics(u, c):
-    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
-        set_setting("owner_chat_id", u.effective_chat.id)
-        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
-    if not is_owner(u): return
+    if not studio_owner(u): return
     try:
-        r = _yt_metrics_update()
-        if r: await u.message.reply_text(f"YouTube live: {r[0]} subscribers | {r[1]} watch hours (trailing 365 days).")
+        r = await asyncio.to_thread(_yt_metrics_update)
+        if r: await u.message.reply_text(f"YouTube live: {r[0]} subscribers | {r[1]} total analytics watch hours (not a verified YPP-eligible total).")
         else: await u.message.reply_text("YouTube not connected. /connect_youtube")
-    except Exception as e:
-        await u.message.reply_text("Metrics failed: " + str(e)[:200])
+    except Exception:
+        await u.message.reply_text("YouTube metrics unavailable. Use /yt_status to check the channel connection.")
+
+
+async def publish_studio_result(u,c,result,title,report):
+    stopped=lambda:get_setting('frozen')=='1' or c.application.bot_data.get('topic_video_stopped',False)
+    try:
+        uploaded = await asyncio.to_thread(youtube.upload,result,title,report,stopped)
+        status = uploaded['upload_status']
+        await u.message.reply_text(f"YouTube received the video: https://youtu.be/{uploaded['id']}\n"
+            f"Visibility: {uploaded['privacy']} · Upload status: {status}. Processing may still be underway.")
+        log_action('YT','Studio upload confirmed '+uploaded['id'])
+    except YouTubeError as error:
+        await u.message.reply_text('YouTube upload stopped: '+str(error)+'\nYour completed Telegram video remains available.')
+        log_action('YT','Studio upload not completed; owner notified')
+    except Exception:
+        await u.message.reply_text('YouTube upload could not be prepared. Your completed Telegram video remains available.')
+        log_action('YT','Studio upload preparation failed')
+
 
 async def cmd_yt_upload(u, c):
-    if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
-        set_setting("owner_chat_id", u.effective_chat.id)
-        log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
-    if not is_owner(u): return
-    creds = _yt_creds()
-    if not creds:
-        await u.message.reply_text("Connect first: /connect_youtube"); return
-    t = u.message.text.partition(" ")[2].strip()
-    title = t or "Starship Flight 15: First Ship Catch Attempt - What Could Go Wrong"
-    cands = []
-    for d in (RENDER_DIR, INBOX):
-        for fn in os.listdir(d):
-            if fn.lower().endswith(".mp4"):
-                cands.append(os.path.join(d, fn))
-    cands.sort(key=os.path.getmtime)
-    if not cands:
-        await u.message.reply_text("No MP4s found. Send me a video file, or /render first."); return
-    path = cands[-1]
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaFileUpload
-    yt = build("youtube", "v3", credentials=creds)
-    body = {"snippet": {"title": title, "description": "FIRST STAGE - spaceflight explained. Data over hype.\n\nFootage: SpaceX. AI narration, disclosed per YouTube policy.", "categoryId": "28"},
-            "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True}}
+    if not studio_owner(u): return
+    if get_setting('frozen')=='1':
+        await u.message.reply_text("Frozen. 'Smart Resume' to resume."); return
     try:
-        req = yt.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(path, chunksize=-1, resumable=True))
-        resp = None
-        while resp is None:
-            s, resp = req.next_chunk()
-        log_action("YT", "uploaded " + resp["id"])
-        await u.message.reply_text("LIVE: https://youtu.be/" + resp["id"])
-    except Exception as e:
-        log_action("ERROR", "yt_upload " + str(e)[:120])
-        await u.message.reply_text("Upload failed: " + str(e)[:250])
+        saved=json.loads((SHORT_EXPORT_ROOT/'latest.json').read_text())
+        handle=saved['handle']
+        if not is_short_handle(handle) or time.time()-saved['created']>=SHORT_DOWNLOAD_TTL:
+            raise ValueError('No current export')
+        await publish_studio_result(u,c,SHORT_EXPORT_ROOT/handle,saved['title'],saved['report'])
+    except (OSError,ValueError,KeyError):
+        await u.message.reply_text('No completed Studio video is available on this instance. /video <topic> creates one.')
+
 
 async def cmd_connect_reddit(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -757,7 +734,7 @@ def is_short_handle(handle):
 
 class ShortDownloadAccessFilter(logging.Filter):
     def filter(self, record):
-        return "/short-download/" not in record.getMessage()
+        return not any(path in record.getMessage() for path in ("/short-download/", "/youtube/callback"))
 
 
 def save_studio_downloads(result, plan, report):
@@ -959,6 +936,10 @@ async def run_studio_job(u,c,topic):
             status(delivery)
             log_action('STUDIO',delivery)
             logging.info('Studio finished (%.1fs; %d bytes)',report['duration_seconds'],report['bytes'])
+            if youtube.auto_enabled():
+                status('Uploading the checked video to YouTube')
+                await publish_studio_result(u,c,result,plan['title'],report)
+                status(delivery+'; YouTube upload result sent separately')
     except studio.Cancelled:
         status("Cancelled — no video published")
         await u.message.reply_text("Video production stopped.")
@@ -1034,6 +1015,8 @@ app.add_handler(CommandHandler("inbox", cmd_inbox))
 app.add_handler(CommandHandler("connect_youtube", cmd_connect_youtube))
 app.add_handler(MessageHandler(filters.Regex(r"^http://localhost"), cmd_yt_token))
 app.add_handler(CommandHandler("yt_upload", cmd_yt_upload))
+app.add_handler(CommandHandler("yt_status", cmd_yt_status))
+app.add_handler(CommandHandler("yt_auto", cmd_yt_auto))
 app.add_handler(CommandHandler("yt_export", cmd_yt_export))
 app.add_handler(CommandHandler("fetch", cmd_fetch))
 app.add_handler(CommandHandler("staging", cmd_staging))
@@ -1068,9 +1051,43 @@ def dashboard():
 {links}
 _Owner: Juan Ricci (@smartcash22) — Freeze: 'Smart Freeze' / 'Smart Para' — Reports 7AM HST_""" + crash_txt
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 api = FastAPI()
+
+@api.get('/youtube/callback')
+def youtube_callback(state: str='', code: str='', error: str=''):
+    from fastapi.responses import HTMLResponse, RedirectResponse
+    from html import escape
+    headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}
+    try:
+        youtube.finish(state, '' if error else code)
+        response=RedirectResponse('/youtube/connected',status_code=303,headers=headers)
+        response.set_cookie('yt_setup',youtube.backup_ticket(),max_age=600,secure=True,httponly=True,samesite='strict',path='/youtube')
+        return response
+    except YouTubeError as failure:
+        return HTMLResponse('<h1>YouTube connection not completed</h1><p>'+escape(str(failure))+'</p>',status_code=400,headers=headers)
+
+@api.get('/youtube/connected')
+def youtube_connected():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse('<h1>Save the YouTube connection</h1><p>Use /yt_status in Telegram to verify FIRST STAGE.</p>'
+        '<p>To keep the connection after a Render restart, download this private file once and add it in Render &rarr; smart-prime &rarr; Environment &rarr; Secret Files, named YT_TOKEN.json. Do not put it in GitHub or send it in chat.</p>'
+        '<p><a href="/youtube/connection-backup">Download private connection file</a> (expires in 10 minutes; one download)</p>',
+        headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'})
+
+@api.get('/youtube/connection-backup')
+def youtube_connection_backup(request: Request):
+    from fastapi.responses import Response
+    headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'}
+    try:
+        raw=youtube.take_backup(request.cookies.get('yt_setup',''))
+        response=Response(raw,media_type='application/json',headers={**headers,'Content-Disposition':'attachment; filename="YT_TOKEN.json"'})
+        response.delete_cookie('yt_setup',path='/youtube',secure=True,httponly=True,samesite='strict')
+        return response
+    except YouTubeError:
+        return Response('Connection download unavailable. Reconnect through the owner Telegram chat.',status_code=403,headers=headers)
+
 @api.get("/dl/{fname}")
 def dl(fname: str):
     safe = os.path.basename(fname); p = os.path.join(RENDER_DIR, safe)

@@ -67,6 +67,81 @@ def test_private_commands_ignore_other_users(bot_app):
     u.message.reply_text.assert_not_called()
 
 
+def test_youtube_callback_rejects_invalid_state_without_echoing_codes(bot_app):
+    client=TestClient(bot_app.server)
+    response=client.get('/youtube/callback?state=invalid&code=PRIVATE_AUTH_CODE')
+    assert response.status_code==400
+    assert 'PRIVATE_AUTH_CODE' not in response.text
+    assert response.headers['cache-control']=='no-store'
+    assert response.headers['referrer-policy']=='no-referrer'
+
+
+def test_youtube_callback_removes_code_from_success_url(bot_app,monkeypatch):
+    seen=[]
+    monkeypatch.setattr(bot_app.youtube,'finish',lambda state,code:seen.append((state,code)))
+    monkeypatch.setattr(bot_app.youtube,'backup_ticket',lambda:'TEST_SETUP_COOKIE')
+    response=TestClient(bot_app.server).get('/youtube/callback?state=valid&code=PRIVATE_AUTH_CODE',follow_redirects=False)
+    assert response.status_code==303
+    assert response.headers['location']=='/youtube/connected'
+    assert seen==[('valid','PRIVATE_AUTH_CODE')]
+    assert 'HttpOnly' in response.headers['set-cookie']
+    assert 'Secure' in response.headers['set-cookie']
+    assert 'SameSite=strict' in response.headers['set-cookie']
+
+
+def test_connection_backup_requires_secure_cookie_and_is_single_use(bot_app):
+    client=TestClient(bot_app.server,base_url='https://smart-prime.onrender.com')
+    assert client.get('/youtube/connection-backup').status_code==403
+    bot_app.set_setting('yt_token','PRIVATE_FIXTURE_JSON')
+    ticket=bot_app.youtube.backup_ticket()
+    client.cookies.set('yt_setup',ticket)
+    response=client.get('/youtube/connection-backup')
+    assert response.status_code==200 and response.text=='PRIVATE_FIXTURE_JSON'
+    assert response.headers['cache-control']=='no-store'
+    assert 'attachment' in response.headers['content-disposition']
+    assert client.get('/youtube/connection-backup').status_code==403
+
+
+def test_youtube_controls_ignore_other_users_and_export_no_credentials(bot_app):
+    bot_app.set_setting('owner_chat_id',bot_app.JUAN_CHAT_ID)
+    u=SimpleNamespace(effective_chat=SimpleNamespace(id=1),message=SimpleNamespace(reply_text=AsyncMock()))
+    for fn in (bot_app.cmd_yt_status,bot_app.cmd_yt_upload,bot_app.cmd_connect_youtube,bot_app.cmd_yt_auto):
+        asyncio.run(fn(u,SimpleNamespace()))
+    u.message.reply_text.assert_not_called()
+    u.effective_chat.id=int(bot_app.JUAN_CHAT_ID)
+    bot_app.set_setting('yt_token','PRIVATE_REFRESH_TOKEN')
+    asyncio.run(bot_app.cmd_yt_export(u,SimpleNamespace()))
+    assert 'PRIVATE_REFRESH_TOKEN' not in u.message.reply_text.call_args.args[0]
+
+
+def test_youtube_upload_failure_does_not_invalidate_delivered_video(bot_app,monkeypatch):
+    def fail(*args):raise bot_app.YouTubeError('Not connected')
+    monkeypatch.setattr(bot_app.youtube,'upload',fail)
+    u=SimpleNamespace(message=SimpleNamespace(reply_text=AsyncMock()))
+    c=SimpleNamespace(application=SimpleNamespace(bot_data={}))
+    asyncio.run(bot_app.publish_studio_result(u,c,Path('.'),'Title',{}))
+    assert 'completed Telegram video remains available' in u.message.reply_text.call_args.args[0]
+
+
+@pytest.mark.parametrize('enabled',[False,True])
+def test_successful_studio_job_uploads_once_only_when_enabled(bot_app,monkeypatch,tmp_path,enabled):
+    events=[]
+    async def produce(*args):
+        events.append('production')
+        return tmp_path,{'title':'Checked video'},{'duration_seconds':40,'bytes':100}
+    async def deliver(*args):events.append('telegram');return 'Complete'
+    async def publish(*args):events.append('youtube')
+    monkeypatch.setattr(bot_app.studio,'produce',produce)
+    monkeypatch.setattr(bot_app,'save_studio_downloads',lambda *args:'https://example.test/export')
+    monkeypatch.setattr(bot_app,'deliver_studio_result',deliver)
+    monkeypatch.setattr(bot_app,'publish_studio_result',publish)
+    monkeypatch.setattr(bot_app.youtube,'auto_enabled',lambda:enabled)
+    u=SimpleNamespace(message=SimpleNamespace(reply_text=AsyncMock()))
+    c=SimpleNamespace(application=SimpleNamespace(bot_data={}))
+    asyncio.run(bot_app.run_studio_job(u,c,'Topic'))
+    assert events==(['production','telegram','youtube'] if enabled else ['production','telegram'])
+
+
 def test_worker_cancellation_reads_remain_safe_during_database_writes(bot_app):
     from concurrent.futures import ThreadPoolExecutor
     bot_app.set_setting('frozen','0')

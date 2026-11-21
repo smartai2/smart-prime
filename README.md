@@ -23,6 +23,8 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
    supporting quotations, preserve planned-capability wording, and obtain an editorial
    check in a separate model call. This is an AI check, not a guarantee
    of factual correctness. Review the included script and sources before publication.
+   Reviewers can propose minimal corrections, which must pass exact-evidence validation
+   and a new editorial call. This avoids rewriting accepted passages and saves free quota.
 3. Find licensed motion footage and photography on Wikimedia Commons or NASA. Reject
    unknown rights, NC/SA licenses, animations masquerading as footage, unrelated bands
    called Starship, and pre-edited comparisons. Require usable resolution and real video.

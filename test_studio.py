@@ -79,6 +79,40 @@ def test_evidence_ids_attach_original_text_and_reject_invented_ids():
         studio.resolve_evidence({'scenes':[{'evidence_ids':['9:9']}]},catalog)
 
 
+def test_review_correction_requires_fresh_approval_without_another_writer_call():
+    corrected=sample_plan()
+    corrected['scenes'][0]['heading']='Corrected heading'
+    responses=iter([json.dumps(sample_plan()),json.dumps({'approved':False,
+        'issues':['Correct the heading.'],'corrected_plan':corrected}),
+        json.dumps({'approved':True,'issues':[]})])
+    calls=[]
+    async def ask(prompt,*args):
+        calls.append(prompt)
+        return next(responses)
+    result=asyncio.run(studio.write_script('How it works',
+        [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
+    assert result['scenes'][0]['heading']=='Corrected heading'
+    assert len(calls)==3
+    assert all('Fact-check this narration' in p for p in calls[1:])
+    assert 'Corrected heading' in calls[2]
+
+
+def test_reviewer_cannot_approve_its_own_correction_or_invent_evidence():
+    invalid=sample_plan()
+    invalid['scenes'][0]['evidence'][0]['quote']='This invented evidence is absent from the source.'
+    calls=[]
+    async def ask(prompt,*args):
+        calls.append(prompt)
+        if 'Fact-check this narration' in prompt:
+            return json.dumps({'approved':False,'issues':['Change the claim.'],
+                               'corrected_plan':invalid})
+        return json.dumps(sample_plan())
+    with pytest.raises(studio.StudioError,match='evidence check'):
+        asyncio.run(studio.write_script('How it works',
+            [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
+    assert all('This invented evidence' not in p for p in calls if 'Fact-check this narration' in p)
+
+
 def test_writer_repairs_actual_rejected_draft():
     plan=sample_plan()
     bad=sample_plan()

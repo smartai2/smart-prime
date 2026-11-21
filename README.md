@@ -1,4 +1,4 @@
-# Smart Prime — FIRST STAGE Studio 4.0
+# Smart Prime — FIRST STAGE Studio 4.1
 
 Juan can ask in Telegram:
 
@@ -26,7 +26,8 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
 3. Find licensed motion footage and photography on Wikimedia Commons or NASA. Reject
    unknown rights, NC/SA licenses, animations masquerading as footage, unrelated bands
    called Starship, and pre-edited comparisons. Require usable resolution and real video.
-4. Sample actual frames from distinct launches. Screen photographs/footage separately
+4. Search the scene actions as well as the broad subject. Sample early close views and later
+   moments from distinct launches/actions. Screen photographs/footage separately
    from illustrations, then select one shot per sentence. Enforce at least 60% motion
    coverage by narration words, four distinct shots, and no consecutive repeated shot.
    All archive visuals are labelled; they are never presented as footage of a new event.
@@ -55,8 +56,8 @@ No additional paid service or storage subscription is enabled by this release.
 
 - Python entrypoint: `python app.py`; dependencies: `pip install -r requirements.txt`.
 - Existing `SMART_TOKEN`, `BRAIN_API_KEY`, owner and YouTube settings remain in use.
-- Studio uses verified free multimodal routes (Nemotron 3.5 Super VL, Particle 1,
-  then Dots 3 Note) that allow reasoning to be disabled, with a 95-second total
+- Studio uses verified free multimodal routes (Ling 3.2 Flash, Nemotron 3.5 Super VL,
+  then Particle 1) that allow reasoning to be disabled, with a 95-second total
   request deadline. This avoids random routes consuming the entire allowance
   without returning a script. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.
@@ -69,7 +70,9 @@ No additional paid service or storage subscription is enabled by this release.
   FFmpeg and ONNX use a single thread. The heavyweight Gradio dashboard was replaced
   by a small FastAPI page to leave memory available on the existing free instance.
 - `/health` reports Studio version and whether Telegram polling is running.
-- `STUDIO_CACHE` optionally sets the voice-model cache path (default `.studio-cache`).
+- Approved scripts are reused for up to six hours only when the topic, exact source evidence
+  and Studio version match. A visual-stage retry does not spend quota rewriting an approved script.
+- `STUDIO_CACHE` optionally sets the model and approved-script cache path (default `.studio-cache`).
   The first job downloads approximately 64 MB; the cache can disappear on restart.
 - `Smart Freeze` and `/cancel_video` terminate the active narrator/encoder process.
 - Credentials, request URLs and unlisted download handles must not be logged.
@@ -93,4 +96,5 @@ Local test success does not replace checking the deployed Telegram workflow.
 
 Piper is distributed under GPL-3.0-or-later. This project uses the installed package;
 its license is separate from the voice dataset and individual footage licenses.
+
 

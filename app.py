@@ -134,7 +134,7 @@ async def cmd_status(u, c):
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    await u.message.reply_text(f"SMART PRIME v4.0\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
+    await u.message.reply_text(f"SMART PRIME v4.1\nFrozen: {get_setting('frozen')=='1'}\nBrain: {'connected' if brain else 'NO KEY'}\nGoal: {goal_status()}\nInbox: {len(os.listdir(INBOX))} files | Renders: {sorted(os.listdir(RENDER_DIR))}")
 
 async def cmd_goal(u, c):
     if owner_id() is None and str(u.effective_chat.id) == JUAN_CHAT_ID:
@@ -783,8 +783,8 @@ async def studio_ask(prompt, attempt=0, images=None):
     # These free multimodal routes explicitly permit disabling reasoning in the
     # provider catalog. The random router can select mandatory-thinking models
     # that exhaust their entire allowance without returning any final content.
-    model=("nvidia/nemotron-3.5-super-vl:free","particle-ai/particle-1:free",
-           "dots-studio/dots-3-note-preview:free")[min(attempt,2)]
+    model=("inclusionai/ling-3.2-flash:free","nvidia/nemotron-3.5-super-vl:free",
+           "particle-ai/particle-1:free")[min(attempt,2)]
     try:
         # HTTP read timeouts reset on provider keepalives. Bound the whole request too.
         response = await asyncio.wait_for(brain.with_options(timeout=85.0,max_retries=0).chat.completions.create(
@@ -993,7 +993,7 @@ def dashboard():
     inbox = sorted(os.listdir(INBOX))
     links = "\n".join(f"- [{r}](/dl/{r})" for r in renders) or "_none yet_"
     crash_txt = ""
-    return f"""# SMART PRIME v4.0 — FIRST STAGE STUDIO
+    return f"""# SMART PRIME v4.1 — FIRST STAGE STUDIO
 **Status:** {'FROZEN' if frozen else 'ACTIVE'} | **Brain:** {'connected' if brain else 'NO KEY'} | **YT:** {'connected' if get_setting('yt_token') else '-'} | **Reddit:** {'connected' if get_setting('reddit_id') else '-'}
 **Goal:** {goal_status()}
 **Inbox ({len(inbox)}):** {', '.join(inbox[:8]) or 'empty'}
@@ -1034,7 +1034,7 @@ def studio_dashboard():
     return HTMLResponse("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Smart Prime</title><style>body{background:#0b111b;color:#f5f3ec;font:18px system-ui;margin:0;padding:8vw}"
         "main{max-width:760px;margin:auto}h1{font-size:42px}small{color:#ffa666}p{line-height:1.6}code{color:#ffa666}</style></head>"
-        "<body><main><small>FIRST STAGE</small><h1>Smart Prime Studio</h1><p>Version 4.0 · "+("Frozen" if frozen else "Active")+
+        "<body><main><small>FIRST STAGE</small><h1>Smart Prime Studio</h1><p>Version 4.1 · "+("Frozen" if frozen else "Active")+
         "</p><p>Create and retrieve your videos in the owner's Telegram chat.</p>"
         "<p><code>/video</code> · <code>/video_status</code> · <code>/video_latest</code> · <code>/cancel_video</code></p>"
         "<p>Licensed archive footage. Neural narration. Captions. Source credits.</p></main></body></html>")
@@ -1062,5 +1062,6 @@ if __name__ == "__main__":
     logging.getLogger("uvicorn.access").addFilter(ShortDownloadAccessFilter())
     print(">>> FIRST STAGE STUDIO v4.0 READY")
     uvicorn.run(server, host="0.0.0.0", port=PORT)
+
 
 

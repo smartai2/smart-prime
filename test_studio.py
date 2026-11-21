@@ -109,6 +109,50 @@ def test_sentence_repair_cannot_remove_planned_capability_qualification():
     assert not any('Fact-check this narration' in prompt for prompt in calls)
 
 
+def test_sentence_repair_preserves_room_for_factual_revision():
+    bad = sample_plan()
+    bad['scenes'][0]['narration'][0] = 'This is an overly long sentence which contains far too many distinct separate words.'
+    short = sample_plan()['scenes'][0]['narration'][0]
+    responses = iter([json.dumps(bad), json.dumps({'replacements':[[short,short]]}),
+                      json.dumps({'approved':False,'issues':['Correct the factual description.']}),
+                      json.dumps(sample_plan()), json.dumps({'approved':True,'issues':[]})])
+    calls = []
+    async def ask(prompt,*args):
+        calls.append(prompt)
+        return next(responses)
+    plan = asyncio.run(studio.write_script('How it works',
+        [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
+    assert plan['word_count'] == 96
+    assert 'Sentences to shorten' in calls[1]
+    assert 'Fact-check this narration' in calls[2]
+    assert 'Correct the factual description.' in calls[3]
+
+
+def test_approved_script_cache_rechecks_evidence_version_and_expiry(tmp_path,monkeypatch):
+    import os
+    monkeypatch.setenv('STUDIO_CACHE',str(tmp_path))
+    sources = [{'id':1,'text':'This is the exact source evidence for the explanation.'}]
+    plan = sample_plan()
+    plan['editorial_check'] = 'Second model approved.'
+    studio.cache_script('How it works',sources,plan)
+    assert studio.cached_script('How it works',sources) == plan
+    assert studio.cached_script('Another topic',sources) is None
+    assert studio.cached_script('How it works',[{'id':1,'text':'Changed evidence.'}]) is None
+    path = studio.script_cache_path('How it works',sources)
+    past = time.time()-6*3600-1
+    os.utime(path,(past,past))
+    assert studio.cached_script('How it works',sources) is None
+    studio.cache_script('How it works',sources,plan)
+    saved = json.loads(path.read_text()); saved['version']='old'
+    path.write_text(json.dumps(saved))
+    assert studio.cached_script('How it works',sources) is None
+    studio.cache_script('How it works',sources,plan)
+    saved = json.loads(path.read_text())
+    saved['plan']['scenes'][0]['evidence'][0]['quote']='A fabricated quotation never present in evidence.'
+    path.write_text(json.dumps(saved))
+    assert studio.cached_script('How it works',sources) is None
+
+
 def test_stage_explainer_rejects_fact_list_and_unqualified_heading():
     plan=sample_plan()
     with pytest.raises(ValueError,match='Answer how'):
@@ -183,7 +227,7 @@ def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypa
     image.save(tmp_path/'still.jpg')
     def extract(*args,**kwargs):
         offset=float(args[args.index('-ss')+1])
-        if offset!=1:
+        if offset!=2:
             image.save(args[-1])
     monkeypatch.setattr(studio,'ffmpeg',extract)
     assets=[studio.Media('Launch','','','NASA','CC0','','video',path='clip.webm',duration=10),
@@ -308,4 +352,5 @@ def test_quality_gate_rejects_wrong_resolution(tmp_path,monkeypatch):
     monkeypatch.setattr(studio,'probe',lambda p:{'width':640,'height':360,'h264':True,'yuv420p':True,'aac':True,'audio':1})
     with pytest.raises(studio.StudioError,match='format'):
         studio.quality_check(tmp_path/'bad.mp4',[],30)
+
 

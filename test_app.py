@@ -19,6 +19,7 @@ def bot_app(tmp_path,monkeypatch):
     spec=importlib.util.spec_from_file_location('studio_app_under_test',path)
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module.STUDIO_MIN_GAP=0
     yield module
     module._db.close()
 
@@ -104,6 +105,28 @@ def test_daily_quota_has_clear_error_without_logging_provider_body(bot_app,monke
     assert 'NEVER_LOG_PROVIDER_BODY' not in caplog.text
 
 
+def test_transient_free_rate_limit_cools_down_before_next_request(bot_app,monkeypatch):
+    now=[100.0];calls=[];waits=[]
+    monkeypatch.setattr(bot_app.time,'monotonic',lambda:now[0])
+    async def sleep(seconds):
+        waits.append(seconds); now[0]+=seconds
+    monkeypatch.setattr(bot_app.asyncio,'sleep',sleep)
+    error=type('RateLimitError',(Exception,),{})('Temporary limit')
+    error.body={'message':'temporarily rate limited'}
+    async def provider(**kwargs):
+        calls.append(now[0])
+        if len(calls)==1: raise error
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{}'),finish_reason='stop')])
+    fake=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=provider)))
+    monkeypatch.setattr(bot_app,'brain',SimpleNamespace(with_options=lambda **kwargs:fake))
+    async def run():
+        assert await bot_app.studio_ask('JSON') == ''
+        assert await bot_app.studio_ask('JSON',1) == '{}'
+    asyncio.run(run())
+    assert waits == [65.0]
+    assert calls == [100.0,165.0]
+
+
 @pytest.mark.parametrize('video_fails',[False,True])
 def test_link_timeout_preserves_video_and_attempts_inline_delivery(bot_app,video_fails):
     reply=AsyncMock(side_effect=TimeoutError())
@@ -117,4 +140,5 @@ def test_link_timeout_preserves_video_and_attempts_inline_delivery(bot_app,video
     assert 'FIRST_STAGE_package.zip' in send.call_args.kwargs['caption']
     assert ('unconfirmed' in result) if video_fails else ('Telegram video delivered' in result)
     assert 'regenerate' in result if video_fails else True
+
 

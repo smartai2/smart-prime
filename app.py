@@ -770,9 +770,13 @@ def save_studio_downloads(result, plan, report):
 
 
 STUDIO_MODEL_DEADLINE = 95
+STUDIO_MIN_GAP = 3.2
+STUDIO_RATE_RETRY_AT = 0.0
+STUDIO_LAST_REQUEST = 0.0
 
 
 async def studio_ask(prompt, attempt=0, images=None):
+    global STUDIO_RATE_RETRY_AT, STUDIO_LAST_REQUEST
     if not brain:
         raise studio.StudioError("The research writer needs BRAIN_API_KEY configured in Render.")
     options = {"response_format":{"type":"json_object"}}
@@ -785,6 +789,12 @@ async def studio_ask(prompt, attempt=0, images=None):
     # that exhaust their entire allowance without returning any final content.
     model=("nvidia/nemotron-3.5-super-vl:free","particle-ai/particle-1:free",
            "google/gemma-4-31b-it:free")[min(attempt,2)]
+    delay = max(STUDIO_RATE_RETRY_AT-time.monotonic(), STUDIO_LAST_REQUEST+STUDIO_MIN_GAP-time.monotonic(), 0)
+    if delay:
+        if delay > 5:
+            logging.info('Studio waiting %.0fs for free-provider rate-limit cooldown',delay)
+        await asyncio.sleep(delay)
+    STUDIO_LAST_REQUEST = time.monotonic()
     try:
         # HTTP read timeouts reset on provider keepalives. Bound the whole request too.
         response = await asyncio.wait_for(brain.with_options(timeout=85.0,max_retries=0).chat.completions.create(
@@ -801,6 +811,15 @@ async def studio_ask(prompt, attempt=0, images=None):
             logging.warning('Studio free AI rate limit: %s','daily quota' if daily else 'request/provider limit')
             if daily:
                 raise studio.StudioError('The free AI daily quota is exhausted. No unchecked video was delivered. Retry after the quota resets.') from None
+            # Free routes share request limits. Never burst retries across models.
+            retry = 65.0
+            try:
+                header = error.response.headers.get('retry-after','')
+                if header:
+                    retry = min(180.0,max(65.0,float(header)))
+            except (AttributeError,TypeError,ValueError):
+                pass
+            STUDIO_RATE_RETRY_AT = time.monotonic()+retry
         logging.warning("Studio free writer unavailable (%s)",type(error).__name__)
         return ""
 

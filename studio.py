@@ -393,8 +393,8 @@ def validate_script(raw, sources):
             raise ValueError('Evidence describes a planned capability. Preserve that qualification explicitly in the narration.')
         normalized.append({"heading": heading, "visual_query": query,
                            "narration": phrases, "evidence": refs})
-    if not 80 <= words <= 145:
-        raise ValueError(f"The draft has {words} narration words; use 80 to 145. Aim for 100-120 words, preserving evidence and removing repetition.")
+    if not 80 <= words <= 170:
+        raise ValueError(f"The draft has {words} narration words; use 80 to 170. Aim for 100-120 words, preserving evidence and removing repetition.")
     return {"title": title, "scenes": normalized, "word_count": words}
 
 
@@ -449,7 +449,7 @@ async def write_script(topic, sources, ask, stopped=lambda: False):
 Format: {"title":"...", "scenes":[{"heading":"...", "visual_query":"Starship launch",
 "narration":["A complete, natural spoken phrase.","Another phrase."],
 "evidence_ids":["1:1"]}]}.
-Use 4-6 scenes, 80-145 narration words total. Each scene has 1-4 spoken phrases,
+Use 4-6 scenes, 80-170 narration words total. Each scene has 1-4 spoken phrases,
 each a COMPLETE sentence <=12 words and <=80 characters. Never split a clause across
 entries; rewrite long ideas as shorter sentences. Headings <=48 characters, title <=85.
 Start with an intriguing specific question or consequence in the first sentence.
@@ -598,7 +598,7 @@ wording or extra numerical performance claims. Continue rejecting unsupported mi
 capabilities, dates, statistics, or claims that design goals have been achieved.
 """ + json.dumps({"topic":topic,"plan": plan, "sources": sources})
         for review_attempt in range(2):
-            review = await ask(review_request + ("\nReturn ONLY the JSON approval object, without commentary." if review_attempt else ""), (attempt+1)%3)
+            review = await ask(review_request + ("\nReturn ONLY the JSON approval object, without commentary." if review_attempt else ""), (attempt+1+review_attempt)%3)
             check(stopped)
             try:
                 audit = json_object(review or "")

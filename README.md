@@ -10,7 +10,7 @@ Make a Short about why rockets use stages
 /video_latest
 ```
 
-The bot makes a vertical 1080 × 1920 Short, normally 30–70 seconds. One job runs at a time.
+The bot makes a vertical 1080 × 1920 Short, normally 40–85 seconds. One job runs at a time.
 It reports progress and stops when Juan says **Smart Freeze**. It does not publish the new
 Studio videos to YouTube automatically. The older inbox and YouTube commands remain separate.
 
@@ -19,9 +19,9 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
 1. Read source pages; search snippets are discovery hints, not script evidence. Prefer
    primary sources, label reported material, and use encyclopedias only for background.
    Current-news requests need recent, dated reporting. This restriction can stop a job.
-2. Write an original 80–145 word explanation that answers the requested mechanism, in complete short sentences, validate exact
+2. Write an original 80–170 word explanation that answers the requested mechanism, in complete short sentences, validate exact
    supporting quotations, preserve planned-capability wording, and obtain an editorial
-   check from a different model route. This is an AI check, not a guarantee
+   check in a separate model call. This is an AI check, not a guarantee
    of factual correctness. Review the included script and sources before publication.
 3. Find licensed motion footage and photography on Wikimedia Commons or NASA. Reject
    unknown rights, NC/SA licenses, animations masquerading as footage, unrelated bands
@@ -58,7 +58,8 @@ No additional paid service or storage subscription is enabled by this release.
 - Existing `SMART_TOKEN`, `BRAIN_API_KEY`, owner and YouTube settings remain in use.
 - Studio uses verified free multimodal routes (Nemotron 3.5 Super VL, Particle 1,
   then Gemma 4 31B) that allow reasoning to be disabled, with a 95-second total
-  request deadline. This avoids random routes consuming the entire allowance
+  request deadline. Requests are paced; a non-daily rate limit imposes a bounded
+  cooldown before another attempt. This avoids random routes consuming the entire allowance
   without returning a script. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.
 - Piper runs in a short-lived process, releasing model memory before video encoding.

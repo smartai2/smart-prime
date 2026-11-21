@@ -787,13 +787,14 @@ async def studio_ask(prompt, attempt=0, images=None):
     # These free multimodal routes explicitly permit disabling reasoning in the
     # provider catalog. The random router can select mandatory-thinking models
     # that exhaust their entire allowance without returning any final content.
-    model=("nvidia/nemotron-3.5-super-vl:free","particle-ai/particle-1:free",
-           "google/gemma-4-31b-it:free")[min(attempt,2)]
+    model=("nvidia/nemotron-3.5-super-vl:free","particle-ai/particle-1:free")[attempt % 2]
     delay = max(STUDIO_RATE_RETRY_AT-time.monotonic(), STUDIO_LAST_REQUEST+STUDIO_MIN_GAP-time.monotonic(), 0)
     if delay:
         if delay > 5:
             logging.info('Studio waiting %.0fs for free-provider rate-limit cooldown',delay)
         await asyncio.sleep(delay)
+    if get_setting('frozen')=='1' or app.bot_data.get('topic_video_stopped'):
+        raise studio.Cancelled('Stopped before requesting the free provider.')
     STUDIO_LAST_REQUEST = time.monotonic()
     try:
         # HTTP read timeouts reset on provider keepalives. Bound the whole request too.
@@ -937,6 +938,18 @@ async def run_studio_job(u,c,topic):
     except studio.StudioError as error:
         status("Stopped — "+str(error))
         await u.message.reply_text(str(error))
+        diagnostic=getattr(error,'diagnostic',None)
+        if diagnostic:
+            from io import BytesIO
+            data=json.dumps(diagnostic,indent=2,ensure_ascii=False).encode()
+            if len(data)<300_000:
+                try:
+                    await c.bot.send_document(chat_id=u.effective_chat.id,
+                        document=BytesIO(data),filename='FIRST_STAGE_rejected_review.json',
+                        caption='Rejected production draft and evidence — diagnostic only, not approved for publication.',
+                        read_timeout=45,write_timeout=45)
+                except Exception:
+                    logging.warning('Studio diagnostic attachment delivery was not confirmed')
         log_action("STUDIO","Stopped at a production quality check")
     except Exception as error:
         stage=state.get("studio_phase","production")

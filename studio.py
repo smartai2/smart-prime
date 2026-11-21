@@ -355,8 +355,23 @@ def field(obj, key, limit):
     return " ".join(text.split())
 
 
+def normalize_script(plan):
+    """Normalize unambiguous JSON shapes without inventing words or evidence."""
+    if not isinstance(plan,dict):
+        return plan
+    for scene in plan.get('scenes',[]) if isinstance(plan.get('scenes'),list) else []:
+        if not isinstance(scene,dict):
+            continue
+        if isinstance(scene.get('narration'),str):
+            scene['narration']=[scene['narration']]
+        ids=scene.get('evidence_ids')
+        if isinstance(ids,str) and re.fullmatch(r'\s*\d+:\d+(?:\s*[,;]\s*\d+:\d+)*\s*',ids):
+            scene['evidence_ids']=re.findall(r'\d+:\d+',ids)
+    return plan
+
+
 def validate_script(raw, sources):
-    plan = json_object(raw) if isinstance(raw, str) else raw
+    plan = normalize_script(json_object(raw) if isinstance(raw, str) else raw)
     title = field(plan, "title", 85)
     scenes = plan.get("scenes")
     if not isinstance(scenes, list) or not 4 <= len(scenes) <= 6:
@@ -367,13 +382,13 @@ def validate_script(raw, sources):
         heading = field(scene, "heading", 48)
         query = field(scene, "visual_query", 80)
         phrases = scene.get("narration")
-        if not isinstance(phrases, list) or not 1 <= len(phrases) <= 4:
-            raise ValueError("One to four complete sentences per scene.")
+        if not isinstance(phrases, list) or not 1 <= len(phrases) <= 6:
+            raise ValueError("One to six complete sentences per scene.")
         phrases = [field({"phrase": p}, "phrase", 400) for p in phrases]
         # Split only at actual sentence boundaries, never in the middle of a clause.
         phrases=[sentence.strip() for p in phrases for sentence in re.split(r'(?<=[.!?])\s+(?=[A-Z])',p) if sentence.strip()]
-        if len(phrases)>4:
-            raise ValueError('Use at most four complete sentences per scene; remove repetition.')
+        if len(phrases)>6:
+            raise ValueError('Use at most six complete sentences per scene; remove repetition.')
         overlong=[p for p in phrases if len(p.split())>12 or len(p)>80]
         if overlong:
             raise ValueError("Rewrite these as COMPLETE sentences of at most 12 words/80 characters: "+json.dumps(overlong)+". Never split a clause across entries.")
@@ -437,8 +452,8 @@ def validate_topic_focus(plan,topic):
         narration=' '.join(p for s in plan['scenes'] for p in s['narration'])
         if re.search(r'\b(?:successful flights|flights succeeded|flights failed|launched \w+ times)\b',narration,re.I):
             raise ValueError('Explain the staging mechanism; remove unrelated flight counts and success statistics.')
-        if not (re.search(r'super heavy',narration,re.I) and
-                re.search(r'launch|lift|push|ascent|accelerat',narration,re.I) and
+        if not (re.search(r'super\s*heavy|first.stage|lower.stage|booster',narration,re.I) and
+                re.search(r'launch|lift|push|ascent|accelerat|thrust|powers|skyward|off the pad',narration,re.I) and
                 re.search(r'separat|hot.stag',narration,re.I) and
                 re.search(r'upper.stage|ship.{0,35}(?:engine|continu)',narration,re.I)):
             raise ValueError('Answer how the stages work: explain the booster launch role, upper-stage propulsion, and separation sequence using the primary evidence. Names alone are not an explanation.')
@@ -449,7 +464,7 @@ async def write_script(topic, sources, ask, stopped=lambda: False):
 Format: {"title":"...", "scenes":[{"heading":"...", "visual_query":"Starship launch",
 "narration":["A complete, natural spoken phrase.","Another phrase."],
 "evidence_ids":["1:1"]}]}.
-Use 4-6 scenes, 80-170 narration words total. Each scene has 1-4 spoken phrases,
+Use 4-6 scenes, 80-170 narration words total. Each scene has 1-6 spoken phrases,
 each a COMPLETE sentence <=12 words and <=80 characters. Never split a clause across
 entries; rewrite long ideas as shorter sentences. Headings <=48 characters, title <=85.
 Start with an intriguing specific question or consequence in the first sentence.
@@ -492,7 +507,7 @@ is a design goal, not a headline claiming completed operational capability.
             reply = await ask(request + correction, (attempt+1) % 3)
         check(stopped)
         try:
-            prior_plan = json_object(reply or '')
+            prior_plan = normalize_script(json_object(reply or ''))
         except (ValueError, TypeError):
             last_error = 'Return the full script as a single JSON object.'
             continue
@@ -524,7 +539,7 @@ is a design goal, not a headline claiming completed operational capability.
                         fixed = await ask(prompt,(attempt+1)%3)
                         check(stopped)
                         try:
-                            prior_plan = json_object(fixed or '')
+                            prior_plan = normalize_script(json_object(fixed or ''))
                         except (ValueError,TypeError):
                             break
                         plan = None
@@ -614,7 +629,10 @@ capabilities, dates, statistics, or claims that design goals have been achieved.
                 last_error = "Fact-check returned invalid JSON. Keep every claim directly supported."
                 logging.info('Studio review format error: %s',str(error)[:150])
     logging.info('Studio script stopped: %s',last_error[:500])
-    raise StudioError("The script did not pass the evidence check after four drafts and bounded format repairs. No unchecked video was delivered.")
+    error = StudioError("The script did not pass the evidence check after four drafts and bounded format repairs. No unchecked video was delivered.")
+    error.diagnostic = {'status':'REJECTED — NOT APPROVED FOR PUBLICATION','topic':topic,
+                        'issue':last_error,'draft':prior_plan,'sources':sources}
+    raise error
 
 
 @dataclass

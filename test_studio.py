@@ -239,6 +239,27 @@ def test_complete_sentences_are_split_without_cutting_clauses():
     assert result['word_count']==96
 
 
+def test_plain_paragraph_and_exact_evidence_id_are_normalized_without_new_claims():
+    plan=sample_plan()
+    original=plan['scenes'][0]['narration']
+    plan['scenes'][0]['narration']=' '.join(original)
+    plan['scenes'][0]['evidence_ids']='1:1'
+    source={'id':1,'text':'This is the exact source evidence for the explanation.'}
+    normalized=studio.normalize_script(plan)
+    result=studio.validate_script(studio.resolve_evidence(normalized,studio.evidence_catalog([source])),[source])
+    assert result['scenes'][0]['narration']==original
+    assert result['scenes'][0]['evidence']==[{'source_id':1,'quote':source['text']}]
+
+
+def test_stage_focus_accepts_thrust_paraphrase_but_still_requires_separation():
+    plan=sample_plan()
+    plan['scenes'][0]['narration']=['The booster provides initial thrust.','The upper stage ignites before separation.']
+    studio.validate_topic_focus(plan,'How Starship stages work')
+    plan['scenes'][0]['narration']=['The booster provides initial thrust.','The upper stage has engines.']
+    with pytest.raises(ValueError,match='Answer how'):
+        studio.validate_topic_focus(plan,'How Starship stages work')
+
+
 def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypatch):
     from PIL import Image,ImageDraw
     image=Image.new('RGB',(800,800),'white')

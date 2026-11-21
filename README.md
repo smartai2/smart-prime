@@ -77,6 +77,8 @@ No additional paid service or storage subscription is enabled by this release.
 - `STUDIO_CACHE` optionally sets the model and approved-script cache path (default `.studio-cache`).
   The first job downloads approximately 64 MB; the cache can disappear on restart.
 - `Smart Freeze` and `/cancel_video` terminate the active narrator/encoder process.
+- SQLite reads, writes and cursor consumption are serialized across the Telegram,
+  dashboard and rendering threads, including frequent cancellation checks.
 - Credentials, request URLs and unlisted download handles must not be logged.
 
 ## Validation

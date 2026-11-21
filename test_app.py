@@ -67,6 +67,24 @@ def test_private_commands_ignore_other_users(bot_app):
     u.message.reply_text.assert_not_called()
 
 
+def test_worker_cancellation_reads_remain_safe_during_database_writes(bot_app):
+    from concurrent.futures import ThreadPoolExecutor
+    bot_app.set_setting('frozen','0')
+    def worker(index):
+        for step in range(100):
+            bot_app.set_setting(f'worker_{index}',step)
+            bot_app.log_action('CONCURRENCY_TEST',f'{index}:{step}')
+            assert bot_app.get_setting(f'worker_{index}')==str(step)
+            assert bot_app.get_setting('frozen')=='0'
+            assert bot_app.db_rows('SELECT COUNT(*) FROM memory')[0][0]==6
+    with ThreadPoolExecutor(max_workers=6) as workers:
+        list(workers.map(worker,range(6)))
+    assert bot_app.db_rows("SELECT COUNT(*) FROM ledger WHERE kind='CONCURRENCY_TEST'")[0][0]==600
+    bot_app.set_setting('frozen','1')
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        assert list(workers.map(lambda _:bot_app.get_setting('frozen'),range(10)))==['1']*10
+
+
 def test_model_request_has_total_deadline(bot_app,monkeypatch):
     cancelled=[]
     async def provider(**kwargs):

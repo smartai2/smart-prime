@@ -37,12 +37,23 @@ def db():
     c.execute("CREATE TABLE IF NOT EXISTS ledger(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, kind TEXT, detail TEXT, amount REAL DEFAULT 0)")
     c.commit(); return c
 _db = db()
+# Telegram, the dashboard and renderer cancellation checks share this connection.
+# check_same_thread=False permits access; it does not make multi-step cursor/commit
+# operations safe. Keep each operation and its cursor consumption under one lock.
+_db_lock = threading.RLock()
 def get_setting(k):
-    r = _db.execute("SELECT value FROM settings WHERE key=?", (k,)).fetchone(); return r[0] if r else None
+    with _db_lock:
+        r = _db.execute("SELECT value FROM settings WHERE key=?", (k,)).fetchone()
+        return r[0] if r else None
 def set_setting(k, v):
-    _db.execute("INSERT OR REPLACE INTO settings VALUES(?,?)", (k, str(v))); _db.commit()
+    with _db_lock:
+        _db.execute("INSERT OR REPLACE INTO settings VALUES(?,?)", (k, str(v))); _db.commit()
 def log_action(kind, detail, amount=0):
-    _db.execute("INSERT INTO ledger(ts,kind,detail,amount) VALUES(?,?,?,?)", (datetime.now().isoformat(timespec="seconds"), kind, detail, amount)); _db.commit()
+    with _db_lock:
+        _db.execute("INSERT INTO ledger(ts,kind,detail,amount) VALUES(?,?,?,?)", (datetime.now().isoformat(timespec="seconds"), kind, detail, amount)); _db.commit()
+def db_rows(query, parameters=()):
+    with _db_lock:
+        return _db.execute(query, parameters).fetchall()
 def owner_id(): return get_setting("owner_chat_id")
 def is_owner(u): return str(u.effective_chat.id) == str(owner_id())
 
@@ -55,10 +66,11 @@ CONSTITUTION = [
  ("owner", "Juan Ricci, USA, Telegram @smartcash22. Money decisions only; near-zero routine workload.", "core"),
 ]
 def seed_constitution():
-    if _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0] == 0:
-        for t, c, v in CONSTITUTION:
-            _db.execute("INSERT INTO memory(created,kind,content,source,verification) VALUES(?,?,?,?,?)", (datetime.now().isoformat(timespec="seconds"), t, c, "constitution", v))
-        _db.commit(); print(">>> CONSTITUTION seeded")
+    with _db_lock:
+        if _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0] == 0:
+            for t, c, v in CONSTITUTION:
+                _db.execute("INSERT INTO memory(created,kind,content,source,verification) VALUES(?,?,?,?,?)", (datetime.now().isoformat(timespec="seconds"), t, c, "constitution", v))
+            _db.commit(); print(">>> CONSTITUTION seeded")
 seed_constitution()
 
 def goal_status():
@@ -83,7 +95,7 @@ def web_search(q, n=5):
 
 async def brain_ask(user_text, extra="", models=None, *, json_mode=False, max_tokens=2000):
     if not brain: return None, "no BRAIN_API_KEY"
-    mem = _db.execute("SELECT kind,content,verification FROM memory ORDER BY id DESC LIMIT 12").fetchall()
+    mem = db_rows("SELECT kind,content,verification FROM memory ORDER BY id DESC LIMIT 12")
     memory_txt = "\n".join(f"- [{m[2]}] {m[0]}: {m[1]}" for m in mem)
     system = f"""You are Smart Prime, constitutional AI agent of Juan Ricci, running the FIRST STAGE YouTube channel (Musk/space).
 Laws: Juan is sovereign. Smart Freeze/Para halt everything. $200 cap, $100 reserve, no money moves without Juan. Never fabricate; evidence tiers: announced/observed/corroborated/assumption. {goal_status()}
@@ -158,8 +170,10 @@ async def cmd_remember(u, c):
     if "|" not in t:
         await u.message.reply_text("Format: /remember <topic> | <fact>"); return
     topic, fact = [p.strip() for p in t.split("|", 1)]
-    _db.execute("INSERT INTO memory(created,kind,content,source,verification) VALUES(?,?,?,?,?)", (datetime.now().isoformat(timespec="seconds"), topic, fact, "juan-direct", "owner-stated"))
-    _db.commit(); log_action("MEMORY", f"[{topic}]")
+    with _db_lock:
+        _db.execute("INSERT INTO memory(created,kind,content,source,verification) VALUES(?,?,?,?,?)", (datetime.now().isoformat(timespec="seconds"), topic, fact, "juan-direct", "owner-stated"))
+        _db.commit()
+    log_action("MEMORY", f"[{topic}]")
     await u.message.reply_text(f"Remembered under '{topic}'.")
 
 async def cmd_report(u, c):
@@ -167,7 +181,7 @@ async def cmd_report(u, c):
         set_setting("owner_chat_id", u.effective_chat.id)
         log_action("SECURITY", f"Owner auto-registered {u.effective_chat.id}")
     if not is_owner(u): return
-    rows = _db.execute("SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 8").fetchall()
+    rows = db_rows("SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 8")
     await u.message.reply_text("\n".join(["RECENT LEDGER"] + [f"· {r[0][:16]} | {r[1]} | {r[2]}" for r in rows]))
 
 async def cmd_research(u, c):
@@ -315,8 +329,8 @@ async def daily_report(c):
         _yt_metrics_update()
     except Exception:
         pass
-    mem = _db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
-    rows = _db.execute("SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 5").fetchall()
+    mem = db_rows("SELECT COUNT(*) FROM memory")[0][0]
+    rows = db_rows("SELECT ts,kind,detail FROM ledger ORDER BY id DESC LIMIT 5")
     recent = "\n".join(f"· {r[0][:16]} | {r[1]} | {r[2]}" for r in rows) or "· quiet"
     try:
         await c.bot.send_message(chat_id=int(oid), text=f"GOOD MORNING JUAN — daily report\nStatus: {'FROZEN' if get_setting('frozen')=='1' else 'active'}\n{goal_status()}\nMemory entries: {mem}\n\nRecent:\n{recent}\n\nStanding by.")

@@ -309,6 +309,62 @@ def test_stage_focus_accepts_thrust_paraphrase_but_still_requires_separation():
         studio.validate_topic_focus(plan,'How Starship stages work')
 
 
+def test_staging_scope_rejects_the_delivered_overstatement_and_unrelated_research():
+    plan=sample_plan()
+    plan['scenes'][0]['narration']=['Super Heavy provides launch thrust.','The upper stage ignites before separation.']
+    plan['title']='Why Starship Never Pauses Its Acceleration'
+    with pytest.raises(ValueError,match='same title or sentence'):
+        studio.validate_topic_focus(plan,'How Starship stages work')
+    plan['title']='How hot staging keeps thrust during separation'
+    studio.validate_topic_focus(plan,'How Starship stages work')
+    plan['scenes'][1]['narration']=['Engineers study flight data to understand thermal effects.']
+    with pytest.raises(ValueError,match='Omit orbital results'):
+        studio.validate_topic_focus(plan,'How Starship stages work')
+
+
+def test_diagrams_match_mechanisms_and_leave_archive_questions_and_launch_alone():
+    assert studio.diagram_phase('The upper stage ignites before booster cutoff.')=='ignition'
+    assert studio.diagram_phase('Exhaust vents through the interstage.')=='ignition'
+    assert studio.diagram_phase('The stages separate from each other.')=='separation'
+    assert studio.diagram_phase('Starship continues its ascent.')=='ascent'
+    assert studio.diagram_phase('Why ignite before separation?') is None
+    assert studio.diagram_phase('Super Heavy lifts the stack.') is None
+
+
+def test_final_picture_rejection_cannot_be_overruled_by_another_provider(tmp_path,monkeypatch):
+    monkeypatch.setattr(studio,'final_review_sheets',lambda *args:[])
+    calls=[]
+    async def ask(*args,**kwargs):
+        calls.append(args)
+        return json.dumps({'approved':False,'issues':['Shot 9 shows empty smoke.']})
+    with pytest.raises(studio.StudioError,match='empty smoke'):
+        asyncio.run(studio.final_visual_review(tmp_path,sample_plan(),{'edits':[]},ask,tmp_path))
+    assert len(calls)==1
+
+
+def test_final_picture_review_retries_format_failure_but_requires_approval(tmp_path,monkeypatch):
+    monkeypatch.setattr(studio,'final_review_sheets',lambda *args:[])
+    answers=iter(['',json.dumps({'approved':True,'issues':[]})])
+    async def ask(*args,**kwargs):return next(answers)
+    report={'edits':[]}
+    asyncio.run(studio.final_visual_review(tmp_path,sample_plan(),report,ask,tmp_path))
+    assert 'Passed' in report['rendered_picture_review']
+
+
+def test_archive_editor_rejection_stops_without_approval_shopping(tmp_path,monkeypatch):
+    assets=[studio.Media('Launch','','','','','','video')]
+    candidates=[{'id':i,'media_index':0,'kind':'video'} for i in range(4)]
+    monkeypatch.setattr(studio,'contact_sheet',lambda *args:(tmp_path/'sheet.jpg',candidates))
+    screen={'media':[{'index':0,'type':'real'}],
+            'shots':[{'id':i,'usable':True,'subject_visible':True} for i in range(4)]}
+    answers=iter([json.dumps(screen),json.dumps({'approved':False,'shots':[]})])
+    calls=[]
+    async def ask(*args,**kwargs):calls.append(args);return next(answers)
+    with pytest.raises(studio.StudioError,match='visual editor rejected'):
+        asyncio.run(studio.visual_edit(sample_plan(),assets,tmp_path,ask))
+    assert len(calls)==2
+
+
 def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypatch):
     from PIL import Image,ImageDraw
     image=Image.new('RGB',(800,800),'white')

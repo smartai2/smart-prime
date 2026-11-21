@@ -1,4 +1,4 @@
-# Smart Prime — FIRST STAGE Studio 4.1
+# Smart Prime — FIRST STAGE Studio 4.2
 
 Juan can ask in Telegram:
 
@@ -30,7 +30,10 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
 3. Find licensed motion footage and photography on Wikimedia Commons or NASA. Reject
    unknown rights, NC/SA licenses, animations masquerading as footage, unrelated bands
    called Starship, and pre-edited comparisons. Require usable resolution and real video.
-4. Search the scene actions as well as the broad subject. Sample early close views and later
+4. Use explicitly labeled original staging diagrams for ignition/separation mechanisms; real
+   archive imagery illustrates the vehicle and launch. Diagrams are not photorealistic or
+   claimed recordings of an event. Archive motion checks apply to the archive segments.
+   Search the scene actions as well as the broad subject. Sample early close views and later
    moments from distinct launches/actions. Screen photographs/footage separately
    from illustrations, then select one shot per sentence. Enforce at least 60% motion
    coverage by narration words, four distinct shots, and no consecutive repeated shot.
@@ -40,7 +43,9 @@ Studio videos to YouTube automatically. The older inbox and YouTube commands rem
    SHA-256 checked. No robotic eSpeak fallback is used by Studio.
 6. Edit the shots, add a gentle push-in to photographs, burn in phrase-timed captions,
    add attribution and FIRST STAGE branding, and normalize speech in two passes.
-7. Check H.264/AAC playback, full-file decoding, resolution, timeline, caption order,
+7. Review two actual rendered frames per shot before delivery. An explicit picture rejection
+   stops delivery; another provider cannot overrule it.
+8. Check H.264/AAC playback, full-file decoding, resolution, timeline, caption order,
    duration, integrated loudness and true peak before delivery.
 
 ## Delivery

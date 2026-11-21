@@ -783,8 +783,8 @@ async def studio_ask(prompt, attempt=0, images=None):
     # These free multimodal routes explicitly permit disabling reasoning in the
     # provider catalog. The random router can select mandatory-thinking models
     # that exhaust their entire allowance without returning any final content.
-    model=("inclusionai/ling-3.2-flash:free","nvidia/nemotron-3.5-super-vl:free",
-           "particle-ai/particle-1:free")[min(attempt,2)]
+    model=("nvidia/nemotron-3.5-super-vl:free","particle-ai/particle-1:free",
+           "google/gemma-4-31b-it:free")[min(attempt,2)]
     try:
         # HTTP read timeouts reset on provider keepalives. Bound the whole request too.
         response = await asyncio.wait_for(brain.with_options(timeout=85.0,max_retries=0).chat.completions.create(

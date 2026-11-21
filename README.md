@@ -56,8 +56,8 @@ No additional paid service or storage subscription is enabled by this release.
 
 - Python entrypoint: `python app.py`; dependencies: `pip install -r requirements.txt`.
 - Existing `SMART_TOKEN`, `BRAIN_API_KEY`, owner and YouTube settings remain in use.
-- Studio uses verified free multimodal routes (Ling 3.2 Flash, Nemotron 3.5 Super VL,
-  then Particle 1) that allow reasoning to be disabled, with a 95-second total
+- Studio uses verified free multimodal routes (Nemotron 3.5 Super VL, Particle 1,
+  then Gemma 4 31B) that allow reasoning to be disabled, with a 95-second total
   request deadline. This avoids random routes consuming the entire allowance
   without returning a script. No paid fallback is enabled. Availability/rate limits vary.
   A failed editorial or visual check stops the job instead of silently downgrading it.

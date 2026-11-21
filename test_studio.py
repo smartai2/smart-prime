@@ -142,6 +142,7 @@ def test_approved_script_cache_rechecks_evidence_version_and_expiry(tmp_path,mon
     past = time.time()-6*3600-1
     os.utime(path,(past,past))
     assert studio.cached_script('How it works',sources) is None
+
     studio.cache_script('How it works',sources,plan)
     saved = json.loads(path.read_text()); saved['version']='old'
     path.write_text(json.dumps(saved))
@@ -151,6 +152,24 @@ def test_approved_script_cache_rechecks_evidence_version_and_expiry(tmp_path,mon
     saved['plan']['scenes'][0]['evidence'][0]['quote']='A fabricated quotation never present in evidence.'
     path.write_text(json.dumps(saved))
     assert studio.cached_script('How it works',sources) is None
+
+
+def test_total_word_repair_and_provider_failure_do_not_skip_fact_check():
+    long = sample_plan()
+    long['scenes'] += json.loads(json.dumps(long['scenes'][:2]))
+    for scene in long['scenes']:
+        scene['narration'].append('This source explains the system.')
+    calls=[]
+    responses=iter(['',json.dumps(long),json.dumps(sample_plan()),'{"approved":true,"issues":[]}'])
+    async def ask(prompt,*args):
+        calls.append(prompt)
+        return next(responses)
+    result=asyncio.run(studio.write_script('How it works',
+        [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
+    assert result['word_count']==96
+    assert calls[0]==calls[1]
+    assert 'Repair ONLY the total word count' in calls[2]
+    assert 'Fact-check this narration' in calls[3]
 
 
 def test_stage_explainer_rejects_fact_list_and_unqualified_heading():

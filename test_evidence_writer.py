@@ -250,3 +250,20 @@ def test_length_repair_cannot_edit_other_claims(evidence_case):
     items=writer.overlong_items(outline)
     with pytest.raises(ValueError,match='only the overlong IDs'):
         writer.shorten_items(outline,{'replacements':[{'id':'c2','replacement':'Something else is changed.'}]},items)
+
+
+def test_twostage_catalogue_excludes_unrelated_novelty_and_plume_research():
+    useful=['The booster supplies thrust for initial ascent.',
+            'The upper stage has its own rocket engines.',
+            'Upper stage ignition begins before stage separation.']
+    irrelevant=['Jason Howison studies hot staging.', 'Plume impingement hits the booster shield.',
+                'Brian Richardson said staging has never been done before at this size.']
+    catalog=writer.catalogue_for('How Starship two stages work',[{'id':1,'text':' '.join(useful+irrelevant)}])
+    assert {v['quote'] for v in catalog.values()}==set(useful)
+
+
+def test_twelve_sentence_outline_does_not_need_filler(evidence_case):
+    outline,sources=evidence_case
+    outline['claims']=outline['claims'][:12];outline['scenes']=outline['scenes'][:4]
+    plan=compile_case(evidence_case)
+    assert len(plan['claim_evidence'])==12 and plan['word_count']>=80

@@ -950,7 +950,7 @@ async def run_studio_job(u,c,topic):
         if diagnostic:
             draft=diagnostic.get('draft') or {}
             lines=['REJECTED DRAFT — not approved for publication',str(draft.get('title',''))]
-            claims={x.get('id'):x.get('text','') for x in draft.get('claims',[]) if isinstance(x,dict)}
+            claims={x.get('id'):x.get('text','') for x in draft.get('claims',[]) if isinstance(x,dict) and isinstance(x.get('id'),str)}
             for scene in draft.get('scenes',[]):
                 if isinstance(scene,dict):
                     narration=scene.get('narration') or [str(i)+': '+claims.get(i,'[missing claim]') for i in scene.get('claim_ids',[]) if isinstance(i,str)]

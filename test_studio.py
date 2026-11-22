@@ -427,3 +427,14 @@ def test_quality_gate_rejects_wrong_resolution(tmp_path,monkeypatch):
         studio.quality_check(tmp_path/'bad.mp4',[],30)
 
 
+
+
+def test_acceleration_guard_does_not_misclassify_historical_never():
+    plan=sample_plan()
+    plan['scenes'][0]['narration']=['Super Heavy powers launch.', 'The upper stage starts its engines before separation.']
+    plan['scenes'][1]['narration']=['The researcher said this had never been done before.']
+    studio.validate_topic_focus(plan,'How Starship stages work')
+    for text in ['The rocket never stops accelerating.','Continuous thrust is always maintained.','The rocket maintains uninterrupted momentum.']:
+        plan['scenes'][1]['narration']=[text]
+        with pytest.raises(ValueError,match='continuous-acceleration'):
+            studio.validate_topic_focus(plan,'How Starship stages work')

@@ -28,8 +28,8 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
-VERSION = "4.4.1"
-USER_AGENT = "FirstStageStudio/4.4.1 (https://github.com/smartai2/smart-prime)"
+VERSION = "4.4.2"
+USER_AGENT = "FirstStageStudio/4.4.2 (https://github.com/smartai2/smart-prime)"
 WIDTH, HEIGHT, FPS, RATE = 1080, 1920, 24, 48000
 MAX_ASSET = 90_000_000
 PRIMARY = ("nasa.gov", "spacex.com", "esa.int", "faa.gov", "noaa.gov")
@@ -454,7 +454,9 @@ def validate_topic_focus(plan,topic):
             raise ValueError('Describe the end of the initial ascent role, not the end of the booster mission; separation does not end all booster operations.')
         statements=[plan['title']]+[s['heading'] for s in plan['scenes']]+[p for s in plan['scenes'] for p in s['narration']]
         for statement in statements:
-            if re.search(r'never|always|uninterrupted',statement,re.I) and not re.search(r'stag|separat',statement,re.I):
+            if (re.search(r'never|always|uninterrupted',statement,re.I)
+                    and re.search(r'accelerat|thrust|momentum',statement,re.I)
+                    and not re.search(r'stag|separat',statement,re.I)):
                 raise ValueError('Limit continuous-acceleration claims explicitly to staging/separation in the same title or sentence; the rocket does not accelerate forever.')
         if re.search(r'\b(engineers?|thermal|orbit|slosh|refuel\w*|Mars|crew|efficien\w*)\b|flight data',narration,re.I):
             raise ValueError('Keep this explainer on the two stage roles and ignition/separation sequence. Omit orbital results, engineering research, thermal claims, crew, refueling and efficiency comparisons.')

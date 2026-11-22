@@ -1,4 +1,4 @@
-# Smart Prime — FIRST STAGE Studio 4.4.1
+# Smart Prime — FIRST STAGE Studio 4.4.2
 
 ## Sentence-level evidence upgrade
 
@@ -6,7 +6,12 @@ The 7:15 PM HST Studio 4.4 live run reached the free model but stopped at a
 13-plus-word sentence. Version 4.4.1 shortens only overlong items, retaining IDs,
 source evidence and all other text, then requires normal validation and full factual
 review. Rejected fact outlines now show their actual sentences in Telegram diagnostics.
-Live output acceptance is still pending.
+The 7:22 PM run then exposed an overly broad acceleration-scope check: it also
+rejected historical uses of "never". Version 4.4.2 restricts that check to
+acceleration/thrust/momentum statements and filters unrelated researcher, novelty and
+plume-physics material before writing. It prefers twelve distinct sentences rather
+than forcing fourteen and encouraging filler; the 80–170 word, evidence, topic and
+visual quality requirements remain unchanged. Live output acceptance is still pending.
 
 
 The November 21 Studio 4.3.1 live test stopped at factual review: whole-script

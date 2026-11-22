@@ -222,3 +222,31 @@ def test_failed_sentence_review_stops_pipeline_before_media(tmp_path,monkeypatch
         asyncio.run(studio.produce('How it works',None,ask,tmp_path,lambda s:None))
     assert phases==['research']
     assert not studio.script_cache_path('How it works',sources).exists()
+
+
+def test_length_repair_changes_only_flagged_text_then_requires_full_review(evidence_case):
+    outline,sources=evidence_case
+    original=outline['claims'][13]['text']
+    outline['claims'][13]['text']='The two separated stages then follow their respective trajectories after they have separated from one another.'
+    outline['scenes'][0]['heading']='A very long heading describing the vehicle visible during launch'
+    items=writer.overlong_items(outline)
+    repair={'replacements':[{'id':'c14','replacement':original}, {'id':'h1','replacement':'The visible vehicle'}]}
+    revised=writer.shorten_items(outline,repair,items)
+    assert revised['claims'][13]['evidence_ids']==outline['claims'][13]['evidence_ids']
+    assert revised['claims'][:13]==outline['claims'][:13]
+    assert revised['scenes'][1:]==outline['scenes'][1:]
+    responses=iter([outline,repair,review(compile_case((revised,sources)))])
+    prompts=[]
+    async def ask(prompt,route):prompts.append(prompt);return json.dumps(next(responses))
+    result=asyncio.run(studio.write_script('How it works',sources,ask))
+    assert result['fact_outline']==revised
+    assert len(prompts)==3
+    assert 'Shorten ONLY' in prompts[1] and 'Check EVERY' in prompts[2]
+
+
+def test_length_repair_cannot_edit_other_claims(evidence_case):
+    outline,_=evidence_case
+    outline['claims'][0]['text']='An overlong complete sentence with too many extra words to be used as narration in this video.'
+    items=writer.overlong_items(outline)
+    with pytest.raises(ValueError,match='only the overlong IDs'):
+        writer.shorten_items(outline,{'replacements':[{'id':'c2','replacement':'Something else is changed.'}]},items)

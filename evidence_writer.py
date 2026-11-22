@@ -130,6 +130,35 @@ def review_digest(items):
     return hashlib.sha256(json.dumps(items,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 
+def overlong_items(outline):
+    """Identify addressable length defects without rewriting a valid structure."""
+    if not isinstance(outline,dict) or not isinstance(outline.get('scenes'),list) or not 4<=len(outline['scenes'])<=6:
+        return []
+    if not isinstance(outline.get('claims'),list) or not 14<=len(outline['claims'])<=18:
+        return []
+    items=[]
+    if isinstance(outline.get('title'),str) and len(outline['title'])>85:
+        items.append({'id':'title','text':outline['title'],'limit':85})
+    for i,scene in enumerate(outline['scenes']):
+        if isinstance(scene,dict) and isinstance(scene.get('heading'),str) and len(scene['heading'])>48:
+            items.append({'id':f'h{i+1}','text':scene['heading'],'limit':48})
+    for claim in outline['claims']:
+        if isinstance(claim,dict) and isinstance(claim.get('text'),str) and isinstance(claim.get('id'),str):
+            if len(claim['text'])>120 or len(claim['text'].split())>12:
+                items.append({'id':claim['id'],'text':claim['text'],'limit':120,'word_limit':12})
+    return items
+
+
+def shorten_items(outline, answer, items):
+    checks=answer.get('replacements') if isinstance(answer,dict) else None
+    if not isinstance(checks,list) or len(checks)!=len(items) or any(not isinstance(c,dict) for c in checks):
+        raise ValueError('One replacement is required for each overlong item.')
+    ids=[c.get('id') for c in checks]
+    if any(type(i)!=str for i in ids) or len(set(ids))!=len(ids) or set(ids)!={i['id'] for i in items}:
+        raise ValueError('Length repair must match only the overlong IDs.')
+    return apply_corrections(outline,[dict(c,supported=False) for c in checks])
+
+
 def validate_approved(plan, sources, topic):
     """A cached review must still refer to the exact compiled text and evidence."""
     compiled=compile_outline(plan['fact_outline'],catalogue_for(topic,sources),sources,topic)
@@ -175,7 +204,7 @@ def apply_corrections(outline, checks):
 async def write(topic, sources, ask, stopped=lambda:False):
     import studio
     catalog=catalogue_for(topic,sources)
-    outline=None;plan=None;last='';checks=[]
+    outline=None;plan=None;last='';checks=[];length_repaired=False
     async def request(prompt):
         studio.check(stopped)
         # Same reviewer route throughout revisions; no approval shopping.
@@ -189,6 +218,16 @@ async def write(topic, sources, ask, stopped=lambda:False):
         for attempt in range(2):
             try:
                 outline=await request(instruction+('\nCorrect this structure issue: '+last+'\nPrevious outline: '+json.dumps(outline) if last else ''))
+                long=overlong_items(outline)
+                if long and not length_repaired:
+                    length_repaired=True
+                    answer=await request('Shorten ONLY the supplied overlong items. Return JSON: '
+                        '{"replacements":[{"id":"c1","replacement":"A complete shorter sentence."}]}. '
+                        'One replacement per supplied ID. Keep the exact meaning and planned/achieved qualifications. '
+                        'Narration: aim for 10 words, maximum 12 words/120 characters. Headings: 48 characters; title: 85. '
+                        'Do not split, add or drop a claim, and do not alter evidence. A factual review still follows. '
+                        +json.dumps({'items':long},ensure_ascii=False))
+                    outline=shorten_items(outline,answer,long)
                 plan=compile_outline(outline,catalog,sources,topic)
                 break
             except (ValueError,TypeError,KeyError) as error:

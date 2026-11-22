@@ -950,9 +950,10 @@ async def run_studio_job(u,c,topic):
         if diagnostic:
             draft=diagnostic.get('draft') or {}
             lines=['REJECTED DRAFT — not approved for publication',str(draft.get('title',''))]
+            claims={x.get('id'):x.get('text','') for x in draft.get('claims',[]) if isinstance(x,dict)}
             for scene in draft.get('scenes',[]):
                 if isinstance(scene,dict):
-                    narration=scene.get('narration',[])
+                    narration=scene.get('narration') or [str(i)+': '+claims.get(i,'[missing claim]') for i in scene.get('claim_ids',[]) if isinstance(i,str)]
                     lines.append(str(scene.get('heading',''))+': '+(' '.join(str(x) for x in narration) if isinstance(narration,list) else str(narration)))
             lines.append('REVIEW: '+str(diagnostic.get('issue','')))
             await u.message.reply_text('\n\n'.join(lines)[:3900])

@@ -1,6 +1,13 @@
-# Smart Prime — FIRST STAGE Studio 4.4
+# Smart Prime — FIRST STAGE Studio 4.4.1
 
 ## Sentence-level evidence upgrade
+
+The 7:15 PM HST Studio 4.4 live run reached the free model but stopped at a
+13-plus-word sentence. Version 4.4.1 shortens only overlong items, retaining IDs,
+source evidence and all other text, then requires normal validation and full factual
+review. Rejected fact outlines now show their actual sentences in Telegram diagnostics.
+Live output acceptance is still pending.
+
 
 The November 21 Studio 4.3.1 live test stopped at factual review: whole-script
 rewrites kept introducing unsupported timing conditions and staging comparisons.
@@ -11,7 +18,7 @@ are checked too. A separate review must return a verdict for every item.
 Only explicitly rejected text can change. Evidence, sentence order, visuals and
 accepted passages are locked; each correction requires a fresh complete review.
 Missing evidence, incomplete reviews, unchanged rejected text and daily quota
-exhaustion stop production. There is at most one structural repair and two factual
+exhaustion stop production. There is at most one structural repair, one targeted length repair and two factual
 corrections. The text path uses the same free Nemotron route throughout; it does
 not switch reviewers to seek approval. Cached approvals are bound to the exact
 compiled text and evidence, and old-version approvals are invalidated.

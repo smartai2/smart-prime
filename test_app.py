@@ -243,3 +243,16 @@ def test_link_timeout_preserves_video_and_attempts_inline_delivery(bot_app,video
     assert 'regenerate' in result if video_fails else True
 
 
+
+
+def test_rejected_fact_outline_shows_actual_sentences_in_telegram(bot_app,monkeypatch):
+    error=bot_app.studio.StudioError('c14 is too long')
+    error.diagnostic={'draft':{'title':'Rejected title','claims':[{'id':'c14','text':'The actual rejected sentence.'}],
+                              'scenes':[{'heading':'Heading','claim_ids':['c14']}]},'issue':'c14 is too long'}
+    async def produce(*args):raise error
+    monkeypatch.setattr(bot_app.studio,'produce',produce)
+    u=SimpleNamespace(effective_chat=SimpleNamespace(id=123),message=SimpleNamespace(reply_text=AsyncMock()))
+    c=SimpleNamespace(application=SimpleNamespace(bot_data={}),bot=SimpleNamespace(send_document=AsyncMock()))
+    asyncio.run(bot_app.run_studio_job(u,c,'Topic'))
+    assert any('c14: The actual rejected sentence.' in v.args[0] for v in u.message.reply_text.call_args_list)
+    c.bot.send_document.assert_awaited_once()

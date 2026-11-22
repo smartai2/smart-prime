@@ -62,12 +62,6 @@ def test_visual_gate_rejects_repetition_illustrations_and_slideshow():
         with pytest.raises(ValueError):validate(ids,allowed)
 
 
-def test_malformed_review_is_retried_without_skipping_editorial_check():
-    answers=iter([json.dumps(sample_plan()),'The response was interrupted.',
-                  'Review result: {"approved":true,"issues":[]}'])
-    async def ask(*args):return next(answers)
-    plan=asyncio.run(studio.write_script('How it works',[{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
-    assert 'approved' in plan['editorial_check']
 
 
 def test_evidence_ids_attach_original_text_and_reject_invented_ids():
@@ -79,146 +73,20 @@ def test_evidence_ids_attach_original_text_and_reject_invented_ids():
         studio.resolve_evidence({'scenes':[{'evidence_ids':['9:9']}]},catalog)
 
 
-def test_review_correction_requires_fresh_approval_without_another_writer_call():
-    corrected=sample_plan()
-    corrected['scenes'][0]['heading']='Corrected heading'
-    responses=iter([json.dumps(sample_plan()),json.dumps({'approved':False,
-        'issues':['Correct the heading.'],'corrected_plan':corrected}),
-        json.dumps({'approved':True,'issues':[]})])
-    calls=[]
-    async def ask(prompt,*args):
-        calls.append(prompt)
-        return next(responses)
-    result=asyncio.run(studio.write_script('How it works',
-        [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
-    assert result['scenes'][0]['heading']=='Corrected heading'
-    assert len(calls)==3
-    assert all('Fact-check this narration' in p for p in calls[1:])
-    assert 'Corrected heading' in calls[2]
 
 
-def test_editorial_revision_keeps_original_quotes_and_visual_queries():
-    original=sample_plan()
-    proposed=json.loads(json.dumps(original))
-    proposed['scenes'][0]['heading']='Corrected heading'
-    proposed['scenes'][0]['evidence']=[{'source_id':2,'quote':'Fabricated source quote.'}]
-    proposed['scenes'][0]['visual_query']='An unrelated spacecraft'
-    revised=studio.editorial_revision(original,proposed)
-    assert revised['scenes'][0]['evidence']==original['scenes'][0]['evidence']
-    assert revised['scenes'][0]['visual_query']==original['scenes'][0]['visual_query']
-    assert revised['scenes'][0]['heading']=='Corrected heading'
-    assert original['scenes'][0]['heading']=='The explanation'
-    with pytest.raises(ValueError,match='scene count'):
-        studio.editorial_revision(original,{'scenes':[]})
 
 
-def test_reviewer_cannot_approve_its_own_correction_or_invent_evidence():
-    invalid=sample_plan()
-    invalid['scenes'][0]['evidence'][0]['quote']='This invented evidence is absent from the source.'
-    calls=[]
-    async def ask(prompt,*args):
-        calls.append(prompt)
-        if 'Fact-check this narration' in prompt:
-            return json.dumps({'approved':False,'issues':['Change the claim.'],
-                               'corrected_plan':invalid})
-        return json.dumps(sample_plan())
-    with pytest.raises(studio.StudioError,match='evidence check'):
-        asyncio.run(studio.write_script('How it works',
-            [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
-    assert all('This invented evidence' not in p for p in calls if 'Fact-check this narration' in p)
 
 
-def test_writer_repairs_actual_rejected_draft():
-    plan=sample_plan()
-    bad=sample_plan()
-    bad['scenes'][0]['narration'][0]='This is an overly long sentence which contains far too many distinct separate words.'
-    calls=[]
-    answers=iter([json.dumps(bad),json.dumps({'replacements':[plan['scenes'][0]['narration'][0]]}),' {"approved":true,"issues":[]} '])
-    async def ask(prompt,*args):calls.append(prompt);return next(answers)
-    asyncio.run(studio.write_script('How it works',[{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
-    assert 'Sentences to shorten' in calls[1]
-    assert bad['scenes'][0]['narration'][0] in calls[1]
-    assert 'evidence_catalogue' not in calls[1]
-    assert 'Fact-check this narration' in calls[2]
 
 
-def test_sentence_repair_cannot_remove_planned_capability_qualification():
-    source='This is the exact source evidence for the explanation. The spacecraft is intended to carry crew and cargo.'
-    bad=sample_plan()
-    bad['scenes'][0]['narration'][0]='The spacecraft is designed to act as a standalone vehicle for crew and cargo.'
-    bad['scenes'][0]['evidence']=[{'source_id':1,'quote':'The spacecraft is intended to carry crew and cargo.'}]
-    calls=[]
-    async def ask(prompt,*args):
-        calls.append(prompt)
-        if 'Sentences to shorten' in prompt:
-            return json.dumps({'replacements':['The spacecraft carries crew and cargo.']})
-        return json.dumps(bad)
-    with pytest.raises(studio.StudioError,match='evidence check'):
-        asyncio.run(studio.write_script('How it works',[{'id':1,'text':source}],ask))
-    assert not any('Fact-check this narration' in prompt for prompt in calls)
 
 
-def test_sentence_repair_preserves_room_for_factual_revision():
-    bad = sample_plan()
-    bad['scenes'][0]['narration'][0] = 'This is an overly long sentence which contains far too many distinct separate words.'
-    short = sample_plan()['scenes'][0]['narration'][0]
-    responses = iter([json.dumps(bad), json.dumps({'replacements':[[short,short]]}),
-                      json.dumps({'approved':False,'issues':['Correct the factual description.']}),
-                      json.dumps(sample_plan()), json.dumps({'approved':True,'issues':[]})])
-    calls = []
-    async def ask(prompt,*args):
-        calls.append(prompt)
-        return next(responses)
-    plan = asyncio.run(studio.write_script('How it works',
-        [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
-    assert plan['word_count'] == 96
-    assert 'Sentences to shorten' in calls[1]
-    assert 'Fact-check this narration' in calls[2]
-    assert 'Correct the factual description.' in calls[3]
 
 
-def test_approved_script_cache_rechecks_evidence_version_and_expiry(tmp_path,monkeypatch):
-    import os
-    monkeypatch.setenv('STUDIO_CACHE',str(tmp_path))
-    sources = [{'id':1,'text':'This is the exact source evidence for the explanation.'}]
-    plan = sample_plan()
-    plan['editorial_check'] = 'Second model approved.'
-    studio.cache_script('How it works',sources,plan)
-    assert studio.cached_script('How it works',sources) == plan
-    assert studio.cached_script('Another topic',sources) is None
-    assert studio.cached_script('How it works',[{'id':1,'text':'Changed evidence.'}]) is None
-    path = studio.script_cache_path('How it works',sources)
-    past = time.time()-6*3600-1
-    os.utime(path,(past,past))
-    assert studio.cached_script('How it works',sources) is None
-
-    studio.cache_script('How it works',sources,plan)
-    saved = json.loads(path.read_text()); saved['version']='old'
-    path.write_text(json.dumps(saved))
-    assert studio.cached_script('How it works',sources) is None
-    studio.cache_script('How it works',sources,plan)
-    saved = json.loads(path.read_text())
-    saved['plan']['scenes'][0]['evidence'][0]['quote']='A fabricated quotation never present in evidence.'
-    path.write_text(json.dumps(saved))
-    assert studio.cached_script('How it works',sources) is None
 
 
-def test_total_word_repair_and_provider_failure_do_not_skip_fact_check():
-    long = sample_plan()
-    long['scenes'] += json.loads(json.dumps(long['scenes'][:2]))
-    for scene in long['scenes']:
-        scene['narration'].append('This source explains the system.')
-    calls=[]
-    responses=iter(['',json.dumps(long),json.dumps(sample_plan()),'{"approved":true,"issues":[]}'])
-    async def ask(prompt,*args):
-        calls.append(prompt)
-        return next(responses)
-    result=asyncio.run(studio.write_script('How it works',
-        [{'id':1,'text':'This is the exact source evidence for the explanation.'}],ask))
-    assert result['word_count']==96
-    assert calls[0]==calls[1]
-    assert 'Repair ONLY the total word count' in calls[2]
-    assert 'Fact-check this narration' in calls[3]
 
 
 def test_stage_explainer_rejects_fact_list_and_unqualified_heading():
@@ -342,17 +210,6 @@ def test_booster_role_does_not_end_the_whole_mission():
     studio.validate_topic_focus(plan,'How Starship stages work')
 
 
-def test_heading_repair_preserves_narration_evidence_and_short_headings():
-    plan=sample_plan()
-    plan['scenes'][0]['heading']='Separation Completes With Booster Shield Protected'
-    before=json.loads(json.dumps(plan))
-    answer={'headings':['Stage separation']+['Ignore this replacement']*(len(plan['scenes'])-1),
-            'narration':['Invented new claim'],'evidence':[]}
-    repaired=studio.repair_headings(plan,answer)
-    expected=json.loads(json.dumps(before));expected['scenes'][0]['heading']='Stage separation'
-    assert repaired==expected
-    assert plan==before
-    with pytest.raises(ValueError):studio.repair_headings(plan,{'headings':[]})
 
 
 def test_timed_selection_cannot_silently_shift_or_loop():

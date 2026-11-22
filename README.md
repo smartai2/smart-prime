@@ -1,27 +1,26 @@
-# Smart Prime — FIRST STAGE Studio 4.3.1
+# Smart Prime — FIRST STAGE Studio 4.4
 
-## November 21 production corrections
+## Sentence-level evidence upgrade
 
-The 6:48 PM HST Studio 4.3 live test stopped at script validation: one long heading
-caused repeated full-script drafts. Version 4.3.1 repairs overlong headings in place,
-preserving narration, evidence, and already valid headings. Normal factual review still
-must approve the revised text. No completed Studio 4.3/4.3.1 delivery is claimed.
+The November 21 Studio 4.3.1 live test stopped at factual review: whole-script
+rewrites kept introducing unsupported timing conditions and staging comparisons.
+Studio 4.4 replaces that writer with an explicit fact outline. Every spoken sentence
+has its own stable claim ID and exact source evidence; the title and each heading
+are checked too. A separate review must return a verdict for every item.
 
-The 2:14 PM HST run rendered a 38-second video but failed final picture review;
-it is not an approved deliverable. Version 4.3 addresses the observed defects:
+Only explicitly rejected text can change. Evidence, sentence order, visuals and
+accepted passages are locked; each correction requires a fresh complete review.
+Missing evidence, incomplete reviews, unchanged rejected text and daily quota
+exhaustion stop production. There is at most one structural repair and two factual
+corrections. The text path uses the same free Nemotron route throughout; it does
+not switch reviewers to seek approval. Cached approvals are bound to the exact
+compiled text and evidence, and old-version approvals are invalidated.
 
-- Mechanism questions use labeled diagrams too, instead of automatically selecting archive footage.
-- The ignition diagram labels interstage vents, depicts openings, and labels simplified exhaust flow.
-- Script validation rejects claims that the booster's entire job ends at separation.
-- After narration, a new storyboard review checks each selected interval at 5%, 50%, and 95%
-  with the actual captions. Explicit rejection stops before expensive encoding.
-- Rendering cannot silently move or loop a selected interval to fit narration.
-
-The final rendered-picture check, factual evidence checks, licensing requirements, and
-motion/variety requirements remain mandatory. Sampling cannot guarantee every frame is
-perfect; the final output still needs acceptance review. These changes are not proof of
-a successful unattended delivery. Automatic publishing remains paused pending acceptance
-and the separate Google authorization fix. No paid service is required by this change.
+The labeled diagrams, three-frame timed storyboard review, actual rendered-picture
+review, licensing requirements and audio/technical checks remain mandatory.
+No successful Studio 4.4 unattended delivery is claimed by this code change alone.
+Automatic publishing remains paused pending output acceptance and the separate
+Google authorization fix. No paid service is required by this change.
 
 Juan can ask in Telegram:
 
@@ -43,14 +42,12 @@ The old arbitrary-inbox public uploader has been removed.
 1. Read source pages; search snippets are discovery hints, not script evidence. Prefer
    primary sources, label reported material, and use encyclopedias only for background.
    Current-news requests need recent, dated reporting. This restriction can stop a job.
-2. Write an original 80–170 word explanation that answers the requested mechanism, in complete short sentences, validate exact
-   supporting quotations, preserve planned-capability wording, and obtain an editorial
-   check in a separate model call. This is an AI check, not a guarantee
-   of factual correctness. Review the included script and sources before publication.
-   Reviewers can propose minimal corrections, which must pass exact-evidence validation
-   and a new editorial call. Corrections can change only title, headings and narration;
-   original evidence quotations and visual queries are retained by the application.
-   This avoids rewriting accepted passages and saves free quota.
+2. Build an original 80–170 word explanation from an evidence outline, with one
+   complete short sentence and exact source IDs per claim. Check each sentence,
+   title and heading in a separate model call; preserve planned-capability wording.
+   A rejected item's replacement can use only its original evidence. Accepted text,
+   evidence and scene order cannot be rewritten. Corrections require a new complete
+   review. This is an AI check, not a guarantee of factual correctness.
 3. Find licensed motion footage and photography on Wikimedia Commons or NASA. Reject
    unknown rights, NC/SA licenses, animations masquerading as footage, unrelated bands
    called Starship, and pre-edited comparisons. Require usable resolution and real video.
@@ -77,7 +74,7 @@ The old arbitrary-inbox public uploader has been removed.
 The private owner chat receives temporary, unlisted links first. Telegram then attempts
 to fetch the MP4 by URL for an inline video, avoiding the old multipart-upload timeout.
 The ZIP includes MP4, SRT, thumbnail, upload description with media credits, script,
-source evidence, edit decisions and technical report. Include the supplied attribution
+source evidence, sentence-by-sentence evidence/verdicts, edit decisions and technical report. Include the supplied attribution
 when publishing. The source footage's audio is discarded.
 
 Downloads are available **up to 24 hours on the current Render instance**. Free Render
@@ -89,8 +86,7 @@ No additional paid service or storage subscription is enabled by this release.
 
 - Python entrypoint: `python app.py`; dependencies: `pip install -r requirements.txt`.
 - Existing `SMART_TOKEN`, `BRAIN_API_KEY`, owner and YouTube settings remain in use.
-- Studio uses free text reasoning routes (Nemotron 3 Ultra and ERNIE 5.5 Flash) for
-  writing/review, and Nemotron 3.5 Super VL/Particle 1 for visual inspection. Text
+- Studio uses the free Nemotron 3 Ultra text route for sentence writing/review, and Nemotron 3.5 Super VL/Particle 1 for visual inspection. Text
   reasoning budgets leave room for final JSON; vision reasoning is disabled. Each
   request has a 95-second total deadline. Requests are paced; a non-daily rate limit imposes a bounded
   cooldown before another attempt. This avoids random routes consuming the entire allowance

@@ -1,6 +1,15 @@
-# Smart Prime — FIRST STAGE Studio 4.4.2
+# Smart Prime — FIRST STAGE Studio 4.4.3
 
 ## Sentence-level evidence upgrade
+
+The 7:27 PM HST Studio 4.4.2 run reached sentence review. It correctly rejected
+booster-role and upper-stage-continuation claims with mismatched attached evidence.
+Inspection found that the source filter discarded launch evidence containing
+"orbital launch pad" and a completed-ascent-burn passage. Version 4.4.3 retains
+those passages with their full context, while still filtering unrelated orbital
+research. Reviews also receive source dates/titles, and general mechanism scripts
+are told to omit variant-specific engine counts. Live output acceptance is pending.
+
 
 The 7:15 PM HST Studio 4.4 live run reached the free model but stopped at a
 13-plus-word sentence. Version 4.4.1 shortens only overlong items, retaining IDs,

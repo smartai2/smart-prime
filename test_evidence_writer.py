@@ -267,3 +267,13 @@ def test_twelve_sentence_outline_does_not_need_filler(evidence_case):
     outline['claims']=outline['claims'][:12];outline['scenes']=outline['scenes'][:4]
     plan=compile_case(evidence_case)
     assert len(plan['claim_evidence'])==12 and plan['word_count']>=80
+
+
+def test_stage_evidence_keeps_orbital_launch_pad_and_completed_ascent_burn():
+    wanted=['The booster powered the stacked vehicle from the orbital launch pad.',
+            'The spacecraft reached an orbit and completed its ascent burn.',
+            'The upper engines ignite before stage separation.']
+    unwanted=['The booster research concerns propellant transfer in orbit.',
+              'The upper stage used thrusters to control orientation in orbit.']
+    catalog=writer.catalogue_for('How Starship stages work',[{'id':1,'text':' '.join(wanted+unwanted)}])
+    assert {v['quote'] for v in catalog.values()}==set(wanted)

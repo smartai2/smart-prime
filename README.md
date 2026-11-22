@@ -1,6 +1,11 @@
-# Smart Prime — FIRST STAGE Studio 4.3
+# Smart Prime — FIRST STAGE Studio 4.3.1
 
 ## November 21 production corrections
+
+The 6:48 PM HST Studio 4.3 live test stopped at script validation: one long heading
+caused repeated full-script drafts. Version 4.3.1 repairs overlong headings in place,
+preserving narration, evidence, and already valid headings. Normal factual review still
+must approve the revised text. No completed Studio 4.3/4.3.1 delivery is claimed.
 
 The 2:14 PM HST run rendered a 38-second video but failed final picture review;
 it is not an approved deliverable. Version 4.3 addresses the observed defects:

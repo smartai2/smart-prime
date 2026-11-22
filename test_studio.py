@@ -342,6 +342,19 @@ def test_booster_role_does_not_end_the_whole_mission():
     studio.validate_topic_focus(plan,'How Starship stages work')
 
 
+def test_heading_repair_preserves_narration_evidence_and_short_headings():
+    plan=sample_plan()
+    plan['scenes'][0]['heading']='Separation Completes With Booster Shield Protected'
+    before=json.loads(json.dumps(plan))
+    answer={'headings':['Stage separation']+['Ignore this replacement']*(len(plan['scenes'])-1),
+            'narration':['Invented new claim'],'evidence':[]}
+    repaired=studio.repair_headings(plan,answer)
+    expected=json.loads(json.dumps(before));expected['scenes'][0]['heading']='Stage separation'
+    assert repaired==expected
+    assert plan==before
+    with pytest.raises(ValueError):studio.repair_headings(plan,{'headings':[]})
+
+
 def test_timed_selection_cannot_silently_shift_or_loop():
     media=studio.Media('Launch','','','','','','video',duration=10)
     assert studio.selected_shot_timing({'source_in':2},media,{'duration':3})[2]==2

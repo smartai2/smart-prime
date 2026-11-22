@@ -322,13 +322,71 @@ def test_staging_scope_rejects_the_delivered_overstatement_and_unrelated_researc
         studio.validate_topic_focus(plan,'How Starship stages work')
 
 
-def test_diagrams_match_mechanisms_and_leave_archive_questions_and_launch_alone():
+def test_diagrams_match_mechanisms_including_opening_questions():
     assert studio.diagram_phase('The upper stage ignites before booster cutoff.')=='ignition'
     assert studio.diagram_phase('Exhaust vents through the interstage.')=='ignition'
     assert studio.diagram_phase('The stages separate from each other.')=='separation'
     assert studio.diagram_phase('Starship continues its ascent.')=='ascent'
-    assert studio.diagram_phase('Why ignite before separation?') is None
+    assert studio.diagram_phase('Why ignite before separation?')=='ignition'
+    assert studio.diagram_phase('Why does Starship keep speeding up while it splits?')=='separation'
     assert studio.diagram_phase('Super Heavy lifts the stack.') is None
+
+
+def test_booster_role_does_not_end_the_whole_mission():
+    plan=sample_plan()
+    plan['scenes'][0]['narration']=['Super Heavy provides launch thrust.','The upper stage ignites before separation.',
+                                   'Its job ends roughly three minutes after liftoff.']
+    with pytest.raises(ValueError,match='booster mission'):
+        studio.validate_topic_focus(plan,'How Starship stages work')
+    plan['scenes'][0]['narration'][-1]='The initial ascent role ends at separation.'
+    studio.validate_topic_focus(plan,'How Starship stages work')
+
+
+def test_timed_selection_cannot_silently_shift_or_loop():
+    media=studio.Media('Launch','','','','','','video',duration=10)
+    assert studio.selected_shot_timing({'source_in':2},media,{'duration':3})[2]==2
+    for offset in (9,-1,float('nan')):
+        with pytest.raises(studio.StudioError,match='shifting or looping'):
+            studio.selected_shot_timing({'source_in':offset},media,{'duration':3})
+
+
+def test_storyboard_samples_selected_interval_and_rejection_stops(tmp_path,monkeypatch):
+    from PIL import Image
+    media=studio.Media('Launch','','','','','','video',path='clip.mp4',duration=30)
+    plan={'title':'Launch','scenes':[{'heading':'Launch','narration':['The booster lifts the stack.']}],
+          'shots':[{'media_index':0,'source_in':7}]}
+    stamps=[]
+    def extract(*args,**kwargs):
+        stamps.append(float(args[args.index('-ss')+1]))
+        Image.new('RGB',(640,360),'blue').save(args[-1])
+    monkeypatch.setattr(studio,'ffmpeg',extract)
+    pages,edits=studio.storyboard_sheets(plan,[media],[{'duration':3}],tmp_path)
+    duration=edits[0]['duration']
+    assert stamps==pytest.approx([7+duration*x for x in (.05,.5,.95)])
+    assert pages[0].is_file()
+    monkeypatch.setattr(studio,'storyboard_sheets',lambda *args:(pages,edits))
+    calls=[]
+    async def ask(*args,**kwargs):
+        calls.append(args)
+        return json.dumps({'approved':False,'issues':['Shot 1 becomes a distant dot.']})
+    with pytest.raises(studio.StudioError,match='distant dot'):
+        asyncio.run(studio.storyboard_review(plan,[media],[{'duration':3}],tmp_path,ask))
+    assert len(calls)==1
+    assert 'storyboard_check' not in plan
+
+
+def test_production_storyboard_failure_never_reaches_render(tmp_path,monkeypatch):
+    monkeypatch.setattr(studio,'isolated_phase',lambda *args:[])
+    monkeypatch.setattr(studio,'cached_script',lambda *args:sample_plan())
+    async def select(*args):pass
+    async def reject(*args):raise studio.StudioError('Storyboard rejected before rendering: wrong action')
+    monkeypatch.setattr(studio,'visual_edit',select)
+    monkeypatch.setattr(studio,'narration',lambda *args:[])
+    monkeypatch.setattr(studio,'storyboard_review',reject)
+    monkeypatch.setattr(studio,'render_edit',lambda *args:pytest.fail('Rejected storyboard must not render'))
+    with pytest.raises(studio.StudioError,match='wrong action') as error:
+        asyncio.run(studio.produce('Starship stages',None,None,tmp_path,lambda text:None))
+    assert error.value.diagnostic['status'].startswith('REJECTED')
 
 
 def test_final_picture_rejection_cannot_be_overruled_by_another_provider(tmp_path,monkeypatch):

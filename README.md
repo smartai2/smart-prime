@@ -1,4 +1,22 @@
-# Smart Prime — FIRST STAGE Studio 4.2
+# Smart Prime — FIRST STAGE Studio 4.3
+
+## November 21 production corrections
+
+The 2:14 PM HST run rendered a 38-second video but failed final picture review;
+it is not an approved deliverable. Version 4.3 addresses the observed defects:
+
+- Mechanism questions use labeled diagrams too, instead of automatically selecting archive footage.
+- The ignition diagram labels interstage vents, depicts openings, and labels simplified exhaust flow.
+- Script validation rejects claims that the booster's entire job ends at separation.
+- After narration, a new storyboard review checks each selected interval at 5%, 50%, and 95%
+  with the actual captions. Explicit rejection stops before expensive encoding.
+- Rendering cannot silently move or loop a selected interval to fit narration.
+
+The final rendered-picture check, factual evidence checks, licensing requirements, and
+motion/variety requirements remain mandatory. Sampling cannot guarantee every frame is
+perfect; the final output still needs acceptance review. These changes are not proof of
+a successful unattended delivery. Automatic publishing remains paused pending acceptance
+and the separate Google authorization fix. No paid service is required by this change.
 
 Juan can ask in Telegram:
 

@@ -1,4 +1,12 @@
-# Smart Prime — FIRST STAGE Studio 4.4.3
+# Smart Prime — FIRST STAGE Studio 4.5.0
+
+## Visual review diagnostics and readable contact pages
+
+Studio 4.5.0 preserves a failed visual job before temporary files disappear: the approved script and evidence, licensed candidate metadata, source/shot screening, sentence-to-archive/diagram mapping, picture-editor response and contact pages. The picture editor is asked for every sentence's coverage and precise missing visual on rejection. An explicit rejection still stops immediately; a missing reason never turns a rejection into another approval attempt.
+
+Candidate sheets are split into pages of six shots, retaining original shot IDs, rather than sending one very tall image that can become unreadable after image resizing. All pages are reviewed in the same call. Existing relevance, authenticity, motion, variety, storyboard and rendered-picture gates are unchanged. Live acceptance of this change remains pending.
+
+Rejected diagnostics are sent only to the owner via an unlisted, expiring link, retrievable with `/video_diagnostics` without AI calls. The ZIP contains no video and never replaces the latest publishable output. Like finished downloads, it expires within 24 hours and can disappear on free-server restart. It is diagnostic evidence, not approved content.
 
 ## Sentence-level evidence upgrade
 

@@ -283,6 +283,7 @@ def test_archive_editor_rejection_stops_without_approval_shopping(tmp_path,monke
     assets=[studio.Media('Launch','','','','','','video')]
     candidates=[{'id':i,'media_index':0,'kind':'video'} for i in range(4)]
     monkeypatch.setattr(studio,'contact_sheet',lambda *args:(tmp_path/'sheet.jpg',candidates))
+    monkeypatch.setattr(studio,'contact_sheet_pages',lambda *args:[tmp_path/'sheet.jpg'])
     screen={'media':[{'index':0,'type':'real'}],
             'shots':[{'id':i,'usable':True,'subject_visible':True} for i in range(4)]}
     answers=iter([json.dumps(screen),json.dumps({'approved':False,'shots':[]})])
@@ -291,6 +292,58 @@ def test_archive_editor_rejection_stops_without_approval_shopping(tmp_path,monke
     with pytest.raises(studio.StudioError,match='visual editor rejected'):
         asyncio.run(studio.visual_edit(sample_plan(),assets,tmp_path,ask))
     assert len(calls)==2
+
+
+def test_contact_pages_preserve_every_candidate_row(tmp_path):
+    from PIL import Image,ImageDraw
+    sheet=Image.new('RGB',(960,1500))
+    draw=ImageDraw.Draw(sheet)
+    colors=['red','green','blue','yellow','white']
+    for row,color in enumerate(colors):
+        draw.rectangle((0,row*300,959,row*300+299),fill=color)
+    path=tmp_path/'sheet.png';sheet.save(path)
+    pages=studio.contact_sheet_pages(path,tmp_path)
+    assert [Image.open(p).size for p in pages]==[(960,600),(960,600),(960,300)]
+    for row,color in enumerate(colors):
+        original=sheet.getpixel((400,row*300+150))
+        with Image.open(pages[row//2]) as page:
+            got=page.getpixel((400,(row%2)*300+150))
+        assert max(abs(a-b) for a,b in zip(original,got))<5
+
+
+def test_picture_rejection_preserves_evidence_before_temp_cleanup(tmp_path,monkeypatch):
+    import io,zipfile
+    from tempfile import TemporaryDirectory
+    plan=sample_plan()
+    rejection={'approved':False,'coverage':[{'sentence':0,'ids':[],
+               'reason':'Only descent is visible','required_visual':'Launch hardware'}]}
+    sources=[{'id':1,'text':'Original evidence'}]
+    monkeypatch.setattr(studio,'cached_script',lambda *args:plan)
+    def phase(name,*args):
+        if name=='research':return sources
+        return [studio.asdict(studio.Media('NASA launch','','source','NASA','Public domain','','video'))]
+    monkeypatch.setattr(studio,'isolated_phase',phase)
+    async def reject(plan,assets,root,*args):
+        plan['picture_editor_review']=rejection
+        plan['shot_screen']=[{'id':0,'usable':False,'reason':'smoke'}]
+        (root/'candidate_page_00.jpg').write_bytes(b'frame fixture')
+        (root/'private_worker_request.json').write_text('must not escape')
+        (root/'unapproved.mp4').write_bytes(b'not an accepted video')
+        raise studio.StudioError('The visual editor rejected the archive')
+    monkeypatch.setattr(studio,'visual_edit',reject)
+    monkeypatch.setattr(studio,'narration',lambda *args:pytest.fail('Do not narrate rejected pictures'))
+    with TemporaryDirectory(dir=tmp_path) as folder:
+        with pytest.raises(studio.StudioError) as caught:
+            asyncio.run(studio.produce('Starship stages',None,None,Path(folder),lambda x:None))
+    assert not Path(folder).exists()
+    error=caught.value
+    assert error.diagnostic['sources']==sources
+    assert error.diagnostic['draft']['picture_editor_review']==rejection
+    with zipfile.ZipFile(io.BytesIO(error.diagnostic_zip)) as archive:
+        assert set(archive.namelist())=={'README.txt','REJECTED_review.json','candidate_page_00.jpg'}
+        data=json.loads(archive.read('REJECTED_review.json'))
+        assert data['licensed_candidates'][0]['license']=='Public domain'
+        assert data['draft']['shot_screen'][0]['reason']=='smoke'
 
 
 def test_missing_video_frame_does_not_abort_other_usable_shots(tmp_path,monkeypatch):

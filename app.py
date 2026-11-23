@@ -726,6 +726,7 @@ import studio
 SHORT_EXPORT_ROOT = Path(RENDER_DIR).with_name("short-exports")
 SHORT_DOWNLOAD_TTL = 24 * 60 * 60
 SHORT_DOWNLOAD_TYPES = studio.EXPORTS
+DIAGNOSTIC_TYPES = {'FIRST_STAGE_rejected_review.zip':'application/zip'}
 
 
 def is_short_handle(handle):
@@ -758,6 +759,40 @@ def save_studio_downloads(result, plan, report):
     pending.write_text(json.dumps(latest))
     pending.replace(target)
     return f"https://smart-prime.onrender.com/short-download/{handle}"
+
+
+def save_studio_diagnostic(data):
+    """Separate expiring bearer link; never replace the latest approved video."""
+    if not data or len(data)>20_000_000:
+        raise ValueError('Diagnostic exceeds private delivery limit')
+    SHORT_EXPORT_ROOT.mkdir(mode=0o700,exist_ok=True)
+    for entry in SHORT_EXPORT_ROOT.iterdir():
+        if is_short_handle(entry.name) and entry.is_dir() and time.time()-entry.stat().st_mtime>=SHORT_DOWNLOAD_TTL:
+            shutil.rmtree(entry,ignore_errors=True)
+    handle=secrets.token_urlsafe(24)
+    folder=SHORT_EXPORT_ROOT/handle
+    folder.mkdir(mode=0o700)
+    (folder/'FIRST_STAGE_rejected_review.zip').write_bytes(data)
+    pointer=SHORT_EXPORT_ROOT/'diagnostic.json'
+    pending=pointer.with_suffix('.tmp')
+    pending.write_text(json.dumps({'handle':handle,'created':time.time()}))
+    pending.replace(pointer)
+    return f'https://smart-prime.onrender.com/short-download/{handle}/FIRST_STAGE_rejected_review.zip'
+
+
+async def cmd_video_diagnostics(u,c):
+    if not studio_owner(u): return
+    try:
+        saved=json.loads((SHORT_EXPORT_ROOT/'diagnostic.json').read_text())
+        handle=saved['handle']
+        if (not is_short_handle(handle) or time.time()-saved['created']>=SHORT_DOWNLOAD_TTL
+                or not (SHORT_EXPORT_ROOT/handle/'FIRST_STAGE_rejected_review.zip').is_file()):
+            raise ValueError('Expired')
+        await u.message.reply_text('REJECTED production review — not for publication.\n'
+            f'https://smart-prime.onrender.com/short-download/{handle}/FIRST_STAGE_rejected_review.zip\n'
+            'Private unlisted link; expires within 24 hours or on server restart.')
+    except (OSError,ValueError,KeyError):
+        await u.message.reply_text('No saved visual diagnostic is available on this instance.')
 
 
 STUDIO_MODEL_DEADLINE = 95
@@ -948,6 +983,16 @@ async def run_studio_job(u,c,topic):
         await u.message.reply_text(str(error))
         diagnostic=getattr(error,'diagnostic',None)
         if diagnostic:
+            packed=getattr(error,'diagnostic_zip',None)
+            if packed:
+                try:
+                    link=await asyncio.to_thread(save_studio_diagnostic,packed)
+                    await u.message.reply_text('REJECTED visual review saved privately: '+link+
+                        '\nIncludes script, evidence, licensed candidates, screening and picture-editor reasons. '
+                        'Not approved for publication. /video_diagnostics retrieves this link without AI calls. '
+                        'Save now: expires within 24 hours or on restart.',disable_web_page_preview=True)
+                except Exception:
+                    logging.warning('Studio diagnostic link delivery was not confirmed')
             draft=diagnostic.get('draft') or {}
             lines=['REJECTED DRAFT — not approved for publication',str(draft.get('title',''))]
             claims={x.get('id'):x.get('text','') for x in draft.get('claims',[]) if isinstance(x,dict) and isinstance(x.get('id'),str)}
@@ -1026,6 +1071,7 @@ app.add_handler(CommandHandler("make_video", cmd_make_video))
 app.add_handler(CommandHandler("video", cmd_video))
 app.add_handler(CommandHandler("video_status", cmd_video_status))
 app.add_handler(CommandHandler("video_latest", cmd_video_latest))
+app.add_handler(CommandHandler("video_diagnostics", cmd_video_diagnostics))
 app.add_handler(CommandHandler("cancel_video", cmd_cancel_video))
 app.add_handler(CommandHandler("yt_metrics", cmd_yt_metrics))
 app.add_handler(CommandHandler("connect_reddit", cmd_connect_reddit))
@@ -1097,7 +1143,7 @@ def dl(fname: str):
 
 @api.get("/short-download/{handle}/{filename}")
 def short_download(handle: str, filename: str):
-    media_type = SHORT_DOWNLOAD_TYPES.get(filename)
+    media_type = SHORT_DOWNLOAD_TYPES.get(filename) or DIAGNOSTIC_TYPES.get(filename)
     if media_type and is_short_handle(handle):
         folder = SHORT_EXPORT_ROOT / handle
         path = folder / filename

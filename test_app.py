@@ -60,6 +60,33 @@ def test_frozen_and_duplicate_jobs_do_not_start(bot_app):
     assert 'already in progress' in reply.call_args.args[0]
 
 
+def test_diagnostics_private_expiring_and_separate_from_publishable_video(bot_app,tmp_path):
+    bot_app.SHORT_EXPORT_ROOT.mkdir()
+    latest=bot_app.SHORT_EXPORT_ROOT/'latest.json'
+    latest.write_text('{"title":"existing approved output"}')
+    url=bot_app.save_studio_diagnostic(b'zip fixture')
+    handle=url.split('/')[-2]
+    client=TestClient(bot_app.server)
+    response=client.get(f'/short-download/{handle}/FIRST_STAGE_rejected_review.zip')
+    assert response.status_code==200
+    assert response.headers['cache-control']=='private, no-store'
+    assert latest.read_text()=='{"title":"existing approved output"}'
+    assert client.get(f'/short-download/{handle}/FIRST_STAGE.mp4').status_code==404
+    assert client.get(f'/short-download/{handle}/diagnostic.json').status_code==404
+    assert handle not in client.get('/').text
+    bot_app.set_setting('owner_chat_id',bot_app.JUAN_CHAT_ID)
+    reply=AsyncMock()
+    other=SimpleNamespace(effective_chat=SimpleNamespace(id=1),message=SimpleNamespace(reply_text=reply))
+    asyncio.run(bot_app.cmd_video_diagnostics(other,None))
+    reply.assert_not_called()
+    owner=SimpleNamespace(effective_chat=SimpleNamespace(id=int(bot_app.JUAN_CHAT_ID)),message=SimpleNamespace(reply_text=reply))
+    asyncio.run(bot_app.cmd_video_diagnostics(owner,None))
+    assert url in reply.call_args.args[0]
+    old=time.time()-bot_app.SHORT_DOWNLOAD_TTL-1
+    os.utime(bot_app.SHORT_EXPORT_ROOT/handle,(old,old))
+    assert client.get(f'/short-download/{handle}/FIRST_STAGE_rejected_review.zip').status_code==404
+
+
 def test_private_commands_ignore_other_users(bot_app):
     bot_app.set_setting('owner_chat_id',bot_app.JUAN_CHAT_ID)
     u=SimpleNamespace(effective_chat=SimpleNamespace(id=1),message=SimpleNamespace(reply_text=AsyncMock()))

@@ -87,6 +87,8 @@ def test_planned_sentence_cannot_hide_behind_another_qualified_sentence(evidence
     outline['claims'][1].update(text='The vehicle is designed to carry cargo.',evidence_ids=['1:16'])
     with pytest.raises(ValueError,match='c1: preserve the planned'):compile_case(evidence_case)
     outline['claims'][0]['text']='The vehicle is designed to carry cargo after development.'
+    # Keep the positive case distinct under the independent repetition check.
+    outline['claims'][1].update(text='The upper vehicle sits above that lower stage.',evidence_ids=['1:2'])
     compile_case(evidence_case)
 
 
@@ -277,3 +279,18 @@ def test_stage_evidence_keeps_orbital_launch_pad_and_completed_ascent_burn():
               'The upper stage used thrusters to control orientation in orbit.']
     catalog=writer.catalogue_for('How Starship stages work',[{'id':1,'text':' '.join(wanted+unwanted)}])
     assert {v['quote'] for v in catalog.values()}==set(wanted)
+
+
+def test_sparse_stage_catalogue_does_not_restore_research_animation():
+    useful='The booster supplies thrust during initial ascent.'
+    excluded='As the animation progresses the exhaust expands around the interstage.'
+    catalog=writer.catalogue_for('How Starship stages work',[{'id':1,'text':useful+' '+excluded}])
+    assert [v['quote'] for v in catalog.values()]==[useful]
+
+
+def test_factual_correction_cannot_repeat_adjacent_separation_claim(evidence_case):
+    outline,sources=evidence_case
+    outline['claims'][9].update(text='Starship separates from Super Heavy using hot-staging technique.',evidence_ids=['1:9'])
+    outline['claims'][10].update(text='Starship separates from Super Heavy per the flight plan.',evidence_ids=['1:9'])
+    with pytest.raises(ValueError,match='c10/c11: repeated opening action'):
+        compile_case(evidence_case)

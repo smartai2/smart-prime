@@ -311,6 +311,28 @@ def test_contact_pages_preserve_every_candidate_row(tmp_path):
         assert max(abs(a-b) for a,b in zip(original,got))<5
 
 
+def test_live_staging_and_engine_claims_use_matching_schematics(tmp_path):
+    from PIL import Image
+    assert studio.diagram_phase('Vehicle keeps accelerating through the staging event.')=='separation'
+    assert studio.diagram_phase('Both stages use Raptor engines for propulsion.')=='propulsion'
+    assert studio.diagram_phase('Super Heavy provides initial ascent power for the stack.') is None
+    assert studio.diagram_phase('Upper stage engines ignite before booster separation.')=='ignition'
+    path=tmp_path/'propulsion.png'
+    studio.staging_diagram(path,'propulsion')
+    with Image.open(path) as image:
+        assert image.size==(1080,1080)
+
+
+def test_positive_screen_flag_cannot_override_explicit_visibility_defect():
+    assets=[studio.Media('NASA launch','','','','','','video')]
+    candidates=[{'id':i,'media_index':0} for i in range(3)]
+    screen={'media':[{'index':0,'type':'real'}],'shots':[
+        {'id':0,'usable':True,'subject_visible':True,'reason':'Rocket visible but too distant for a clearly legible rocket.'},
+        {'id':1,'usable':True,'subject_visible':True,'reason':'Only a tiny bright dot; not legible.'},
+        {'id':2,'usable':True,'subject_visible':True,'reason':'Clear rocket with exhaust, not a tiny dot.'}]}
+    assert studio.screened_shots(screen,assets,candidates)==[2]
+
+
 def test_picture_rejection_preserves_evidence_before_temp_cleanup(tmp_path,monkeypatch):
     import io,zipfile
     from tempfile import TemporaryDirectory

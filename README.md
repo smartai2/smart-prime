@@ -1,4 +1,10 @@
-# Smart Prime — FIRST STAGE Studio 4.5.0
+# Smart Prime — FIRST STAGE Studio 4.5.1
+
+## Corrections from the November 22 live visual rejection
+
+The real 14:05 HST Studio 4.5.0 run passed automated sentence review, then explicitly failed picture selection. Its newly preserved private diagnostic exposed an acceleration-during-staging sentence incorrectly assigned to launch footage, duplicate separation narration, and a positive screening flag whose reason said the shot was too distant. Independent inspection also found the proposed pad photos did not clearly depict both engine systems. No video was rendered or delivered.
+
+Version 4.5.1 routes staging acceleration to the existing separation schematic and general two-stage Raptor propulsion to a new labeled equipment diagram that makes no firing-order or engine-count claim. Explicit visibility defects override contradictory positive screening flags. Adjacent claims with the same five-word opening and same evidence are rejected as repetition. Animation/research-process text is excluded from the mechanism catalogue even when evidence is sparse. All normal factual, visual, motion/variety, timed-storyboard and final-render gates still apply. These changes require a fresh live acceptance run; the rejected job is never resumed as approved.
 
 ## Visual review diagnostics and readable contact pages
 

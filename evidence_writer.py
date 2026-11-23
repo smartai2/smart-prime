@@ -35,6 +35,10 @@ views. Internal mechanisms and separation questions will use labeled original di
 Prefer the requested topic as the title when it fits. Do not drift into a hot-staging-only
 video: explain what each stage does. Omit researcher names, novelty records and quotes
 about something never being done before. Exclude plume impingement and heat shields.
+Do not narrate an article's animation or research process. Use explicit mechanism facts.
+Describe supercooled methane/oxygen as fuels, never as cold thrust or cold exhaust.
+Never repeat the same subject/action/object from the same evidence in adjacent sentences
+with a different filler ending. If a correction would repeat a neighboring fact, reject it.
 Use this sequence: (1) visible stack and launch, (2) booster and upper stage roles,
 (3) engine ignition and interstage vents, (4) separation and upper-stage continuation.
 Use only facts available in the catalogue; do not invent missing roles or mechanisms.
@@ -47,14 +51,13 @@ def catalogue_for(topic, sources):
     catalog = studio.evidence_catalog(sources)
     if re.search('starship',topic,re.I) and re.search('stag',topic,re.I):
         relevant = {k:v for k,v in catalog.items() if re.search(r'engine|booster|hot.stag|separat|ascent|two.stage',v['quote'],re.I)
-                    and not re.search(r'simulat|comput|CFD|mesh|researcher|cryogenic|propellant transfer|lunar|Artemis|slosh|thruster|flight data|imping|shield|Jason|Howison|Brian|Richardson|unprecedented|never been|first time|first rocket|low.pressure|plume expans',v['quote'],re.I)
+                    and not re.search(r'animation|simulat|comput|CFD|mesh|researcher|cryogenic|propellant transfer|lunar|Artemis|slosh|thruster|flight data|imping|shield|Jason|Howison|Brian|Richardson|unprecedented|never been|first time|first rocket|low.pressure|plume expans',v['quote'],re.I)
                     # "Orbital launch pad" is launch evidence. A sentence about a
                     # completed ascent burn can also contain an orbit claim; keep
                     # the full context and let review check the selected claim.
                     and (not re.search(r'\borbit\b',v['quote'],re.I)
                          or re.search(r'\bascent burn\b',v['quote'],re.I))}
-        if len(relevant)>=3:
-            catalog = relevant
+        catalog = relevant  # Never restore excluded material because coverage is thin.
     return catalog
 
 
@@ -106,6 +109,12 @@ def compile_outline(outline, catalog, sources, topic):
                            'evidence':[dict(catalog[e]) for e in evidence_ids]})
     if len(ordered)!=len(set(ordered)) or set(ordered)!=set(by_id):
         raise ValueError('Use every claim exactly once, in scene order.')
+    for left,right in zip(ordered,ordered[1:]):
+        a,b=by_id[left],by_id[right]
+        aw,bw=(re.findall(r"[a-z]+",c['text'].lower()) for c in (a,b))
+        if (len(aw)>=6 and len(bw)>=6 and aw[:5]==bw[:5]
+                and set(a['evidence_ids'])==set(b['evidence_ids'])):
+            raise ValueError(f'{left}/{right}: repeated opening action with the same evidence; use distinct facts, not filler endings.')
     plan = studio.validate_script({'title':studio.field(outline,'title',85),'scenes':raw_scenes},sources)
     studio.validate_topic_focus(plan,topic)
     plan['claim_evidence'] = [by_id[i] for i in ordered]

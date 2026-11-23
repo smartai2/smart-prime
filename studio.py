@@ -28,8 +28,8 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
-VERSION = "4.5.0"
-USER_AGENT = "FirstStageStudio/4.5.0 (https://github.com/smartai2/smart-prime)"
+VERSION = "4.5.1"
+USER_AGENT = "FirstStageStudio/4.5.1 (https://github.com/smartai2/smart-prime)"
 WIDTH, HEIGHT, FPS, RATE = 1080, 1920, 24, 48000
 MAX_ASSET = 90_000_000
 PRIMARY = ("nasa.gov", "spacex.com", "esa.int", "faa.gov", "noaa.gov")
@@ -788,7 +788,11 @@ def screened_shots(answer,assets,candidates):
             len(shots)!=len(candidates) or {s['id'] for s in shots}!={c['id'] for c in candidates}):
         raise ValueError('Screen every source and every numbered shot exactly once.')
     real={m['index'] for m in media if m.get('type')=='real'}
-    usable={s['id'] for s in shots if s.get('usable') is True and s.get('subject_visible') is True}
+    # A positive boolean cannot override the screener's explicit visibility defect.
+    # The live 4.5.0 screen marked a shot usable while calling it "too distant".
+    defects=r'too distant|not (?:clearly )?legible|no recognizable (?:rocket|hardware)|only (?:a )?tiny (?:bright )?(?:dot|streak)|crowd.only|empty sky'
+    usable={s['id'] for s in shots if s.get('usable') is True and s.get('subject_visible') is True
+            and not re.search(defects,str(s.get('reason','')),re.I)}
     return [c['id'] for c in candidates if c['media_index'] in real and c['id'] in usable]
 
 
@@ -853,7 +857,11 @@ def diagram_phase(phrase, heading=''):
     """Choose an explanatory schematic, never a claimed recording of an event."""
     if re.search(r'ignit|cutoff|attached|interstage|\bvents?\b|exhaust|plume',phrase,re.I):
         return 'ignition'
+    if re.search(r'\bRaptor\b',phrase,re.I) and re.search(r'both|stages|propulsion',phrase,re.I):
+        return 'propulsion'
     if re.search(r'separat|\bsplit\w*\b|pull\w* away|hot.stag',phrase,re.I):
+        return 'separation'
+    if re.search(r'\bstaging\b',phrase,re.I) and re.search(r'accelerat|thrust',phrase,re.I):
         return 'separation'
     if re.search(r'(?:upper.stage|Starship).{0,40}(?:continu|ascent|onward)',phrase,re.I):
         return 'ascent'
@@ -867,6 +875,22 @@ def staging_diagram(path,phase):
     from PIL import Image,ImageDraw
     canvas=Image.new('RGB',(1080,1080),'#142332');d=ImageDraw.Draw(canvas)
     orange='#FFA666';white='#F2EFE7';muted='#A7BDCD';body='#385366'
+    if phase=='propulsion':
+        # A labelled equipment schematic, not upper engines firing on the pad.
+        d.text((64,100),'TWO PROPULSION STAGES',font=font(38,True),fill=white)
+        for y,name,role in ((220,'STARSHIP','UPPER STAGE'),(570,'SUPER HEAVY','BOOSTER')):
+            d.rectangle((630,y,790,y+190),fill=body,outline=white,width=4)
+            d.text((64,y+25),name,font=font(39,True),fill=white)
+            d.text((64,y+80),role,font=font(28),fill=muted)
+            d.line((390,y+85,610,y+85),fill=muted,width=3)
+            d.rectangle((665,y+195,755,y+250),fill=orange)
+            d.text((64,y+210),'RAPTOR ENGINE SYSTEM',font=font(27,True),fill=orange)
+            d.line((490,y+225,650,y+225),fill=orange,width=3)
+        d.text((64,890),'Symbols identify hardware, not firing order.',font=font(25),fill=muted)
+        d.text((64,932),'Engine counts and geometry are not depicted.',font=font(24),fill=muted)
+        d.text((64,1000),'ORIGINAL DIAGRAM  /  NOT TO SCALE',font=font(26,True),fill=orange)
+        canvas.save(path)
+        return
     title={'ignition':'UPPER ENGINES IGNITE','separation':'THE STAGES SEPARATE','ascent':'THE UPPER STAGE CONTINUES'}[phase]
     d.text((64,112),title,font=font(35,True),fill=white)
     if phase=='ascent':

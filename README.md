@@ -1,4 +1,8 @@
-# Smart Prime — FIRST STAGE Studio 4.5.1
+# Smart Prime — FIRST STAGE Studio 4.5.2
+
+## November 23 factual-review correction
+
+The real Studio 4.5.1 run stopped before media acquisition: the reviewer rejected unsupported shutdown timing and post-separation ascent claims, then the repetition guard rejected a duplicate correction. Version 4.5.2 removes a conflicting writer instruction that requested ignition before complete booster cutoff; it asks only for evidence-supported separation timing and explicit ascent evidence. Script failures now receive the same private diagnostic ZIP link as visual failures, so attachment-download problems do not prevent inspection. No gates or retry limits changed. Live acceptance remains incomplete; no video was rendered or published in this run.
 
 ## Corrections from the November 22 live visual rejection
 

@@ -28,8 +28,8 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
-VERSION = "4.5.1"
-USER_AGENT = "FirstStageStudio/4.5.1 (https://github.com/smartai2/smart-prime)"
+VERSION = "4.5.2"
+USER_AGENT = "FirstStageStudio/4.5.2 (https://github.com/smartai2/smart-prime)"
 WIDTH, HEIGHT, FPS, RATE = 1080, 1920, 24, 48000
 MAX_ASSET = 90_000_000
 PRIMARY = ("nasa.gov", "spacex.com", "esa.int", "faa.gov", "noaa.gov")

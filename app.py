@@ -984,11 +984,20 @@ async def run_studio_job(u,c,topic):
         diagnostic=getattr(error,'diagnostic',None)
         if diagnostic:
             packed=getattr(error,'diagnostic_zip',None)
+            if not packed:
+                # Script rejections happen before visual assets exist. Preserve
+                # them through the same private download path, not attachment-only.
+                from io import BytesIO
+                import zipfile
+                buffer=BytesIO()
+                with zipfile.ZipFile(buffer,'w',zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr('REJECTED_review.json',json.dumps(diagnostic,indent=2,ensure_ascii=False))
+                packed=buffer.getvalue()
             if packed:
                 try:
                     link=await asyncio.to_thread(save_studio_diagnostic,packed)
-                    await u.message.reply_text('REJECTED visual review saved privately: '+link+
-                        '\nIncludes script, evidence, licensed candidates, screening and picture-editor reasons. '
+                    await u.message.reply_text('REJECTED production review saved privately: '+link+
+                        '\nIncludes the available script, evidence and review diagnostics for the failed stage. '
                         'Not approved for publication. /video_diagnostics retrieves this link without AI calls. '
                         'Save now: expires within 24 hours or on restart.',disable_web_page_preview=True)
                 except Exception:

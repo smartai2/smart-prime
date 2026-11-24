@@ -283,3 +283,10 @@ def test_rejected_fact_outline_shows_actual_sentences_in_telegram(bot_app,monkey
     asyncio.run(bot_app.run_studio_job(u,c,'Topic'))
     assert any('c14: The actual rejected sentence.' in v.args[0] for v in u.message.reply_text.call_args_list)
     c.bot.send_document.assert_awaited_once()
+
+    import json, zipfile
+    saved=json.loads((bot_app.SHORT_EXPORT_ROOT/'diagnostic.json').read_text())
+    with zipfile.ZipFile(bot_app.SHORT_EXPORT_ROOT/saved['handle']/'FIRST_STAGE_rejected_review.zip') as archive:
+        assert json.loads(archive.read('REJECTED_review.json'))==error.diagnostic
+        assert archive.namelist()==['REJECTED_review.json']
+    assert not (bot_app.SHORT_EXPORT_ROOT/'latest.json').exists()

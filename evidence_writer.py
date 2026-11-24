@@ -25,7 +25,10 @@ Preserve plans versus achieved capabilities, historical context, and attribution
 Answer the topic with a clear sequence and distinct useful facts, not repeated claims.
 An opening question must have a supported premise. A takeaway must not add a new claim.
 For a two-stage Starship explainer cover the visible stack, booster launch role, upper
-stage role, ignition before COMPLETE booster cutoff, separation and continued ascent.
+stage role, ignition before separation, separation and continued ascent.
+Do not infer booster shutdown/cutoff timing from a quote about separation timing.
+For continued ascent, attach a quote explicitly describing the upper stage's ascent
+or ascent burn. A quote ending at separation cannot support post-separation flight.
 Do not claim the booster's entire job ends at separation. Omit engine counts, numerical timing, crew,
 research, plume physics, orbital results, reusable-achievement claims and comparisons
 with traditional staging. Do not claim cutoff waits for thrust stabilization.
